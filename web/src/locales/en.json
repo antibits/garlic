@@ -1,0 +1,151 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "saving": "Saving...",
+    "save": "Save",
+    "cancel": "Cancel",
+    "reset": "Reset",
+    "delete": "Delete",
+    "edit": "Edit",
+    "run": "Run",
+    "enable": "Enable",
+    "disable": "Disable",
+    "copy": "Copy",
+    "download": "Download",
+    "view": "View",
+    "refresh": "Refresh",
+    "clear": "Clear",
+    "retry": "Retry",
+    "confirm": "Confirm",
+    "close": "Close",
+    "settings": "Settings",
+    "search": "Search"
+  },
+  "chat": {
+    "welcome": "Welcome to Garlic AI Agent",
+    "welcomeMessage": "Please enter your question or instruction, and I will help you",
+    "initializing": "Initializing...",
+    "selectOrCreateSession": "Please select or create a session to start chatting",
+    "inputPlaceholder": "Type a message... (Enter to send, Shift+Enter for new line)",
+    "send": "Send",
+    "stop": "Stop",
+    "stopGenerating": "Stop generating",
+    "thinking": "Thinking...",
+    "error": "❌ Error: {{error}}",
+    "tips": {
+      "multiTurn": "💡 Supports multi-turn conversation with automatic context association",
+      "realtime": "⚡ Real-time response with streaming content",
+      "shortcut": "📝 Shift+Enter for new line, Enter to send"
+    },
+    "codeBlock": {
+      "copy": "Copy"
+    }
+  },
+  "session": {
+    "title": "Sessions",
+    "newSession": "New Session",
+    "noSessions": "No sessions yet",
+    "createFirst": "Create first session",
+    "loading": "Loading sessions...",
+    "rename": "Rename",
+    "save": "Save",
+    "cancel": "Cancel",
+    "inputSessionName": "Enter session name",
+    "deleteConfirm": "Are you sure you want to delete this session?",
+    "messageCount": "{{count}} messages",
+    "session": "Session"
+  },
+  "tools": {
+    "title": "Tools",
+    "addTool": "Add Tool",
+    "noTools": "No tools available",
+    "loading": "Loading...",
+    "webSearch": "Web Search",
+    "webSearchDesc": "Search the internet for latest information",
+    "fileViewer": "File Viewer",
+    "fileViewerDesc": "View and analyze file content",
+    "codeGen": "Code Generation",
+    "codeGenDesc": "Automatically generate Python tool scripts"
+  },
+  "outputs": {
+    "title": "Outputs",
+    "noOutputs": "No outputs yet",
+    "loading": "Loading..."
+  },
+  "memory": {
+    "title": "Memory",
+    "noMemories": "No memories yet",
+    "memoryHint": "Memories will accumulate automatically during conversations",
+    "loading": "Loading memories...",
+    "loadFailed": "Failed to load memories",
+    "clearFailed": "Failed to clear memories",
+    "refresh": "Refresh memories",
+    "clearAll": "Clear all memories",
+    "clearConfirm": "Are you sure you want to clear all memories?",
+    "retry": "Retry"
+  },
+  "settings": {
+    "title": "System Configuration",
+    "loading": "Loading configuration...",
+    "saveSuccess": "Configuration saved",
+    "saveFailed": "Failed to save",
+    "resetConfirm": "Are you sure you want to reset to default configuration?",
+    "models": {
+      "title": "Model Configuration (Models)",
+      "description": "Configure available LLM models, each model can independently set provider, temperature and other parameters",
+      "add": "Add New Model",
+      "delete": "Delete Model",
+      "deleteConfirm": "Are you sure you want to delete model \"{{name}}\"?",
+      "atLeastOne": "At least one model configuration must be kept",
+      "inUse": "Cannot delete: Agent \"{{name}}\" is using this model",
+      "provider": "Provider",
+      "modelName": "Model Name",
+      "baseUrl": "Base URL",
+      "apiKey": "API Key (Environment Variable)",
+      "temperature": "Temperature",
+      "maxTokens": "Max Tokens",
+      "enableThinking": "Enable Thinking",
+      "thinkingHint": "Only supported by some models",
+      "placeholder": {
+        "modelName": "e.g., gpt-4, qwen-coder-plus",
+        "baseUrl": "https://api.openai.com/v1",
+        "apiKey": "${API_KEY_ENV_VAR}"
+      }
+    },
+    "agents": {
+      "title": "Agent Configuration",
+      "description": "Assign models to each Agent role",
+      "useModel": "Use Model",
+      "selectModel": "Please select a model"
+    },
+    "tools": {
+      "title": "Tool Configuration",
+      "description": "Python tool execution environment configuration",
+      "pythonPath": "Python Path",
+      "toolsDir": "Tools Directory",
+      "placeholder": {
+        "pythonPath": "python or full path",
+        "toolsDir": "tools"
+      }
+    },
+    "compress": {
+      "title": "Conversation Compression",
+      "description": "Automatically compress history messages when conversation is too long",
+      "enable": "Enable conversation compression",
+      "round": "Compression Rounds",
+      "length": "Compression Length",
+      "roundHint": "Number of conversation rounds before compression starts",
+      "lengthHint": "Target length after compression (tokens)"
+    }
+  },
+  "theme": {
+    "switchToDark": "Switch to dark mode",
+    "switchToLight": "Switch to light mode"
+  },
+  "tabs": {
+    "sessions": "Sessions",
+    "tools": "Tools",
+    "outputs": "Outputs",
+    "memory": "Memory"
+  }
+}

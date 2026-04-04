@@ -1,0 +1,41 @@
+{
+  "name": "garlic-web",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0"
+  },
+  "keywords": [
+    "garlic",
+    "ai",
+    "agent",
+    "chat"
+  ],
+  "author": "",
+  "license": "MIT",
+  "description": "Garlic AI Agent Web Frontend",
+  "dependencies": {
+    "axios": "^1.15.0",
+    "i18next": "^26.0.6",
+    "i18next-browser-languagedetector": "^8.2.1",
+    "lucide-react": "^1.8.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "react-i18next": "^17.0.4",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.14.1",
+    "rehype-highlight": "^7.0.2",
+    "rehype-katex": "^7.0.1",
+    "rehype-raw": "^7.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.1",
+    "vite": "^8.0.8",
+    "vite-plugin-svgr": "^5.2.0"
+  }
+}

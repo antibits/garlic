@@ -1,0 +1,576 @@
+/* CSS 变量 - 浅色主题（默认） */
+:root {
+  /* 主色调 */
+  --bg-primary: #f5f7fa;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #fafafa;
+  
+  /* 文本颜色 */
+  --text-primary: #333333;
+  --text-secondary: #666666;
+  --text-muted: #999999;
+  --text-inverse: #ffffff;
+  
+  /* 边框颜色 */
+  --border-color: #e0e0e0;
+  --border-focus: #4CAF50;
+  
+  /* 活动栏 (VSCode 风格) */
+  --activity-bar-bg: #f0f0f0;
+  --activity-bar-item-hover: #e0e0e0;
+  --activity-bar-item-active: #e8f5e9;
+  --activity-bar-item-active-border: #4CAF50;
+  --activity-bar-item-text: #666666;
+  --activity-bar-item-text-hover: #333333;
+  --activity-bar-item-text-active: #4CAF50;
+  
+  /* 侧边栏 */
+  --sidebar-bg: #ffffff;
+  --sidebar-item-hover: #f0f0f0;
+  --sidebar-item-active: #e8f5e9;
+  --sidebar-item-active-border: #4CAF50;
+  --sidebar-item-text: #333333;
+  --sidebar-item-text-muted: #999999;
+  
+  /* 按钮 */
+  --btn-primary-bg: linear-gradient(135deg, #4CAF50, #45a049);
+  --btn-primary-text: #ffffff;
+  --btn-secondary-bg: #f0f0f0;
+  --btn-secondary-text: #666666;
+  
+  /* 消息气泡 */
+  --message-user-bg: linear-gradient(135deg, #1976d2, #1565c0);
+  --message-bot-bg: #ffffff;
+  --message-text: #333333;
+  --message-text-inverse: #ffffff;
+  
+  /* 输入框 */
+  --input-bg: #fafafa;
+  --input-border: #e0e0e0;
+  --input-focus-border: #4CAF50;
+  --input-focus-shadow: rgba(76, 175, 80, 0.1);
+  
+  /* 阴影 */
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.3);
+  
+  /* 遮罩 */
+  --overlay-bg: rgba(0, 0, 0, 0.5);
+  
+  /* 代码块 */
+  --code-bg: #f6f8fa;
+  --code-text: #24292e;
+  
+  /* 工具图标颜色 */
+  --icon-session: #4CAF50;
+  --icon-tool: #2196f3;
+  --icon-output: #ff9800;
+}
+
+/* 深色主题 */
+[data-theme="dark"] {
+  /* 主色调 */
+  --bg-primary: #1e1e1e;
+  --bg-secondary: #252526;
+  --bg-tertiary: #2d2d2d;
+  
+  /* 文本颜色 */
+  --text-primary: #cccccc;
+  --text-secondary: #aaaaaa;
+  --text-muted: #858585;
+  --text-inverse: #ffffff;
+  
+  /* 边框颜色 */
+  --border-color: #1e1e1e;
+  --border-focus: #007acc;
+  
+  /* 活动栏 (VSCode 风格) */
+  --activity-bar-bg: #2d2d2d;
+  --activity-bar-item-hover: rgba(255, 255, 255, 0.1);
+  --activity-bar-item-active: rgba(255, 255, 255, 0.1);
+  --activity-bar-item-active-border: #ffffff;
+  --activity-bar-item-text: #858585;
+  --activity-bar-item-text-hover: #ffffff;
+  --activity-bar-item-text-active: #ffffff;
+  
+  /* 侧边栏 */
+  --sidebar-bg: #252526;
+  --sidebar-item-hover: #2a2d2e;
+  --sidebar-item-active: #37373d;
+  --sidebar-item-active-border: #007acc;
+  --sidebar-item-text: #cccccc;
+  --sidebar-item-text-muted: #858585;
+  
+  /* 按钮 */
+  --btn-primary-bg: linear-gradient(135deg, #007acc, #005a9e);
+  --btn-primary-text: #ffffff;
+  --btn-secondary-bg: #3c3c3c;
+  --btn-secondary-text: #cccccc;
+  
+  /* 消息气泡 */
+  --message-user-bg: linear-gradient(135deg, #007acc, #005a9e);
+  --message-bot-bg: #2d2d2d;
+  --message-text: #cccccc;
+  --message-text-inverse: #ffffff;
+  
+  /* 输入框 */
+  --input-bg: #3c3c3c;
+  --input-border: #555555;
+  --input-focus-border: #007acc;
+  --input-focus-shadow: rgba(0, 122, 204, 0.2);
+  
+  /* 阴影 */
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.5);
+  
+  /* 遮罩 */
+  --overlay-bg: rgba(0, 0, 0, 0.7);
+  
+  /* 代码块 */
+  --code-bg: #1e1e1e;
+  --code-text: #d4d4d4;
+  
+  /* 工具图标颜色 */
+  --icon-session: #007acc;
+  --icon-tool: #4ec9b0;
+  --icon-output: #dcdcaa;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  margin: 0;
+  padding: 0;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 强制弹框样式，确保悬浮在页面之上 */
+.settings-modal-overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  background: var(--overlay-bg) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 999999 !important;
+}
+
+.settings-modal {
+  background: var(--bg-secondary) !important;
+  border-radius: 16px !important;
+  width: 90% !important;
+  max-width: 900px !important;
+  height: 85vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  box-shadow: var(--shadow-lg) !important;
+  position: relative !important;
+  z-index: 1000000 !important;
+  overflow: hidden !important;
+}
+
+.settings-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 20px 24px !important;
+  border-bottom: 1px solid var(--border-color) !important;
+  flex-shrink: 0 !important;
+  background: var(--bg-secondary) !important;
+  position: relative !important;
+}
+
+.header-title {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+.header-title h2 {
+  margin: 0 !important;
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  color: var(--text-primary) !important;
+  letter-spacing: -0.02em !important;
+}
+
+.btn-close {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 28px !important;
+  height: 28px !important;
+  border: none !important;
+  background: transparent !important;
+  color: var(--text-secondary) !important;
+  border-radius: 50% !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  transition: all 0.2s !important;
+  position: absolute !important;
+  right: 16px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+}
+
+.btn-close:hover {
+  background: var(--sidebar-item-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+.settings-content {
+  flex: 1 1 auto !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+}
+
+.settings-section {
+  padding: 20px 24px !important;
+  border-bottom: 1px solid var(--border-color) !important;
+}
+
+.settings-section:last-child {
+  border-bottom: none !important;
+}
+
+.section-header {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  margin-bottom: 6px !important;
+}
+
+.section-header h3 {
+  margin: 0 !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  color: var(--text-primary) !important;
+}
+
+.section-desc {
+  margin: 0 0 16px 0 !important;
+  font-size: 12px !important;
+  color: var(--text-muted) !important;
+  line-height: 1.5 !important;
+}
+
+.settings-footer {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 16px 24px !important;
+  border-top: 1px solid var(--border-color) !important;
+  background: var(--bg-tertiary) !important;
+  flex-shrink: 0 !important;
+}
+
+.btn-reset {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 8px 16px !important;
+  border: 1px solid var(--border-color) !important;
+  background: var(--bg-secondary) !important;
+  color: var(--text-secondary) !important;
+  border-radius: 8px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+}
+
+.btn-reset:hover:not(:disabled) {
+  background: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+  transform: scale(1.02) !important;
+}
+
+.btn-reset:disabled {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+}
+
+.settings-actions {
+  display: flex !important;
+  gap: 8px !important;
+}
+
+.btn-cancel {
+  padding: 8px 20px !important;
+  border: 1px solid var(--border-color) !important;
+  background: var(--bg-secondary) !important;
+  color: var(--text-secondary) !important;
+  border-radius: 8px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+}
+
+.btn-cancel:hover:not(:disabled) {
+  background: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+  transform: scale(1.02) !important;
+}
+
+.btn-cancel:disabled {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+}
+
+.btn-save {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 8px 22px !important;
+  border: none !important;
+  background: var(--btn-primary-bg) !important;
+  color: var(--btn-primary-text) !important;
+  border-radius: 8px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.25s !important;
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3) !important;
+}
+
+.btn-save:hover:not(:disabled) {
+  transform: translateY(-1px) scale(1.02) !important;
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.4) !important;
+}
+
+.btn-save:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.models-list {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+}
+
+.model-item {
+  border: 1px solid var(--border-color) !important;
+  border-radius: 10px !important;
+  overflow: hidden !important;
+  background: var(--bg-secondary) !important;
+}
+
+.model-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 14px 16px !important;
+  cursor: pointer !important;
+}
+
+.model-title {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  flex: 1 !important;
+  min-width: 0 !important;
+  flex-wrap: wrap !important;
+}
+
+.model-name {
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  color: var(--text-primary) !important;
+}
+
+.model-provider-badge {
+  padding: 3px 10px !important;
+  border-radius: 5px !important;
+  background: var(--btn-primary-bg) !important;
+  color: var(--btn-primary-text) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+}
+
+.model-model-name {
+  font-size: 12px !important;
+  color: var(--text-muted) !important;
+}
+
+.model-content {
+  padding: 18px 16px 20px 16px !important;
+  border-top: 1px solid var(--border-color) !important;
+  background: var(--bg-tertiary) !important;
+}
+
+.agents-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)) !important;
+  gap: 14px !important;
+}
+
+.agent-card {
+  padding: 16px !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 10px !important;
+  background: var(--bg-secondary) !important;
+}
+
+.agent-name {
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  color: var(--text-primary) !important;
+  margin-bottom: 12px !important;
+}
+
+.form-row {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important;
+  gap: 16px !important;
+  margin-bottom: 16px !important;
+}
+
+.form-row:first-child {
+  margin-bottom: 0 !important;
+}
+
+.form-group {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.form-group label {
+  display: block !important;
+  margin-bottom: 8px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: var(--text-secondary) !important;
+  text-align: left !important;
+}
+
+.form-group input[type="text"],
+.form-group input[type="number"],
+.form-group select {
+  width: 100% !important;
+  padding: 10px 14px !important;
+  border: 1px solid var(--border-color) !important;
+  background: var(--input-bg) !important;
+  color: var(--text-primary) !important;
+  border-radius: 8px !important;
+  font-size: 14px !important;
+  box-sizing: border-box !important;
+}
+
+.form-group select {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236e6e73' d='M6 8L1 3h10z'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 12px center !important;
+  padding-right: 36px !important;
+}
+
+.range-input {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+
+.range-input input[type="range"] {
+  flex: 1 !important;
+  height: 5px !important;
+  border-radius: 3px !important;
+  background: rgba(0, 0, 0, 0.1) !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  cursor: pointer !important;
+}
+
+.range-value {
+  min-width: 50px !important;
+  text-align: center !important;
+  font-weight: 600 !important;
+  color: #007aff !important;
+  font-size: 14px !important;
+  background: rgba(0, 122, 255, 0.1) !important;
+  padding: 6px 12px !important;
+  border-radius: 8px !important;
+}
+
+.checkbox-group {
+  display: flex !important;
+  gap: 10px !important;
+  justify-content: flex-start !important;
+}
+
+.checkbox-group label {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  cursor: pointer !important;
+  margin-bottom: 0 !important;
+  font-weight: 500 !important;
+  color: var(--text-primary) !important;
+  font-size: 14px !important;
+  justify-content: flex-start !important;
+  width: auto !important;
+}
+
+.checkbox-group input[type="checkbox"] {
+  width: 20px !important;
+  height: 20px !important;
+  cursor: pointer !important;
+  accent-color: #007aff !important;
+  border-radius: 5px !important;
+  flex-shrink: 0 !important;
+}
+
+.checkbox-group input[type="checkbox"]:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
+
+.checkbox-group label:has(input:disabled) {
+  opacity: 0.5 !important;
+  color: var(--text-muted) !important;
+  cursor: not-allowed !important;
+}
+
+.hint {
+  margin-top: 8px !important;
+  font-size: 12px !important;
+  color: var(--text-muted) !important;
+  line-height: 1.4 !important;
+}

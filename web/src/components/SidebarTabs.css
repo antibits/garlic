@@ -1,0 +1,599 @@
+/* VSCode 风格的侧边栏布局 */
+.sidebar-tabs {
+  display: flex;
+  height: 100%;
+  background-color: var(--sidebar-bg);
+}
+
+/* 活动栏 - 最左侧窄条，只有图标 */
+.activity-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 48px;
+  background-color: var(--activity-bar-bg);
+  padding-top: 8px;
+  padding-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.activity-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  color: var(--activity-bar-item-text);
+  transition: all 0.2s;
+  border-left: 2px solid transparent;
+}
+
+.activity-item:hover {
+  color: var(--activity-bar-item-text-hover);
+  background-color: var(--activity-bar-item-hover);
+}
+
+.activity-item.active {
+  color: var(--activity-bar-item-text-active);
+  background-color: var(--activity-bar-item-active);
+  border-left-color: var(--activity-bar-item-active-border);
+}
+
+.activity-spacer {
+  flex: 1;
+}
+
+/* 侧边面板 - 活动栏右侧的内容区域 */
+.side-panel {
+  flex: 1;
+  width: 250px;
+  background-color: var(--sidebar-bg);
+  border-right: 1px solid var(--border-color);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.side-panel-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* 滚动条样式 - VSCode 风格 */
+.side-panel-content::-webkit-scrollbar {
+  width: 10px;
+}
+
+.side-panel-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.side-panel-content::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 5px;
+}
+
+.side-panel-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.5);
+}
+
+/* Session List */
+.session-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.session-list-header {
+  padding: 10px 20px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--sidebar-bg);
+}
+
+.session-list-header h2 {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.btn-new-session {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background-color: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-new-session:hover {
+  background-color: var(--activity-bar-item-hover);
+  color: var(--text-inverse);
+}
+
+.session-list-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.session-list-footer {
+  display: none;
+}
+
+.sessions {
+  display: flex;
+  flex-direction: column;
+}
+
+.session-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 20px;
+  background-color: transparent;
+  border-radius: 0;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-left: 2px solid transparent;
+  color: var(--sidebar-item-text);
+}
+
+.session-item:hover {
+  background-color: var(--sidebar-item-hover);
+}
+
+.session-item.active {
+  background-color: var(--sidebar-item-active);
+  border-left-color: var(--sidebar-item-active-border);
+  color: var(--text-primary);
+}
+
+.session-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.session-item.active .session-icon {
+  color: var(--icon-session);
+}
+
+.session-info {
+  flex: 1;
+  min-width: 0;
+  margin-left: 8px;
+}
+
+.session-name {
+  font-weight: 500;
+  font-size: 13px;
+  color: inherit;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-preview {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-meta {
+  display: none;
+}
+
+.session-actions {
+  display: none;
+}
+
+.session-item:hover .session-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.btn-session-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background-color: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all 0.2s;
+}
+
+.btn-session-action:hover {
+  background-color: var(--activity-bar-item-hover);
+  color: var(--text-inverse);
+}
+
+.btn-session-action.btn-edit:hover {
+  background-color: rgba(0, 122, 204, 0.2);
+  color: #007acc;
+}
+
+.btn-session-action.btn-delete:hover {
+  background-color: rgba(255, 0, 0, 0.2);
+  color: #f48771;
+}
+
+/* Session Edit */
+.session-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.session-edit-input {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid var(--border-focus);
+  border-radius: 3px;
+  font-size: 13px;
+  outline: none;
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+}
+
+.session-edit-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.btn-edit-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-edit-action.btn-save {
+  background-color: var(--border-focus);
+  color: white;
+}
+
+.btn-edit-action.btn-save:hover {
+  opacity: 0.9;
+}
+
+.btn-edit-action.btn-cancel {
+  background-color: transparent;
+  color: var(--text-muted);
+}
+
+.btn-edit-action.btn-cancel:hover {
+  background-color: var(--activity-bar-item-hover);
+}
+
+/* Loading & Empty State */
+.loading {
+  text-align: center;
+  padding: 20px;
+  color: var(--text-muted);
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.empty-state svg {
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.empty-state p {
+  margin: 8px 0 16px;
+}
+
+.btn-primary {
+  padding: 6px 16px;
+  background-color: var(--border-focus);
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
+/* Tools Panel */
+.tools-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.tools-header {
+  padding: 10px 20px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tools-header h2 {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.btn-add-tool {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background-color: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-add-tool:hover {
+  background-color: var(--activity-bar-item-hover);
+  color: var(--text-inverse);
+}
+
+.tools-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.tools-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.tool-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 20px;
+  background-color: transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-left: 2px solid transparent;
+  color: var(--sidebar-item-text);
+}
+
+.tool-item:hover {
+  background-color: var(--sidebar-item-hover);
+}
+
+.tool-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--icon-tool);
+  flex-shrink: 0;
+}
+
+.tool-info {
+  flex: 1;
+  min-width: 0;
+  margin-left: 8px;
+}
+
+.tool-name {
+  font-weight: 500;
+  font-size: 13px;
+  color: inherit;
+  margin-bottom: 2px;
+}
+
+.tool-description {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.tool-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.btn-toggle {
+  padding: 2px 8px;
+  background-color: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--text-muted);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  transition: all 0.2s;
+}
+
+.btn-toggle.enabled {
+  border-color: var(--border-focus);
+  color: var(--border-focus);
+}
+
+.btn-toggle:hover {
+  background-color: var(--activity-bar-item-hover);
+}
+
+.btn-tool-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background-color: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all 0.2s;
+}
+
+.btn-tool-action:hover {
+  background-color: var(--activity-bar-item-hover);
+  color: var(--text-inverse);
+}
+
+.btn-tool-action.btn-delete:hover {
+  background-color: rgba(255, 0, 0, 0.2);
+  color: #f48771;
+}
+
+/* Outputs Panel */
+.outputs-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.outputs-header {
+  padding: 10px 20px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.outputs-header h2 {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.outputs-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.outputs-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.output-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 20px;
+  background-color: transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-left: 2px solid transparent;
+  color: var(--sidebar-item-text);
+}
+
+.output-item:hover {
+  background-color: var(--sidebar-item-hover);
+}
+
+.output-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.output-info {
+  flex: 1;
+  min-width: 0;
+  margin-left: 8px;
+}
+
+.output-name {
+  font-weight: 500;
+  font-size: 13px;
+  color: inherit;
+  margin-bottom: 2px;
+}
+
+.output-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.output-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.btn-output-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background-color: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all 0.2s;
+}
+
+.btn-output-action:hover {
+  background-color: var(--activity-bar-item-hover);
+  color: var(--text-inverse);
+}
+
+.btn-output-action.btn-delete:hover {
+  background-color: rgba(255, 0, 0, 0.2);
+  color: #f48771;
+}
