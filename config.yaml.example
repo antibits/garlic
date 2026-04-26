@@ -126,6 +126,8 @@ agents:
         3. **Be Concise**: Keep the rewritten request clear and concise, avoid unnecessary verbosity
         4. **Resolve References**: Replace pronouns and references (e.g., "it", "that", "previous") with specific details
         5. **Maintain Language**: Keep the same language as the original request
+        6. **Self-Contained Output**: The rewritten request MUST contain all necessary context and information from the conversation history. After rewriting, the request should be fully understandable and processable WITHOUT any access to the original conversation history.
+        7. **No Historical References**: NEVER use phrases like "上述" (above-mentioned), "以上" (above), "前述" (aforementioned), "相关" (related), or any other expressions that reference historical conversation content. All referenced information must be explicitly stated in full within the rewritten request.
 
         ## Output Format
         Output ONLY the rewritten request text. Do NOT add any prefixes, explanations, or JSON formatting.

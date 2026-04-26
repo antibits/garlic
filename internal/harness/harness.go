@@ -220,7 +220,7 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 	var rewriteRequest bool
 	// Rewrite request to be self-contained based on conversation history
 	rawRequest := request
-	if h.rewriter != nil && histMsgCount > 0 {
+	if h.rewriter != nil && !h.config.ConvCompressDisabled && histMsgCount > h.config.ConvCompressRound && len([]rune(session.Conversation.GetText())) >= h.config.ConvCompressLength {
 		// Only rewrite if there's conversation history
 		rewritten, usage, err := h.rewriter.Rewrite(ctx, session.Conversation.GetMessages(), request, languageInstr)
 		if err != nil {
@@ -342,10 +342,10 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 				if len(execError) > 0 {
 					// 检查执行次数是否超过限制
 					if currExecCtx.ShouldSkipExec() {
-						currExecCtx.AddMessage("assistant", execError, model.MessageTypeHidden)
+						currExecCtx.AddMessage("assistant", execError, model.MessageTypeAuto)
 						break
 					}
-					currExecCtx.AddMessage("assistant", execError, model.MessageTypeHidden)
+					currExecCtx.AddMessage("assistant", execError, model.MessageTypeAuto)
 					request, requestMsgType = "Try some other way.", model.MessageTypeHidden
 					continue
 				}

@@ -35,10 +35,7 @@ func (t *FileWriterTool) Execute(ctx context.Context, args map[string]interface{
 
 	mode, ok := args["mode"].(string)
 	if !ok {
-		return &ToolResult{
-			Success: false,
-			Error:   "缺少必需参数：mode (写入模式：insert 或 overwrite)",
-		}, nil
+		mode = "insert"
 	}
 
 	content, ok := args["content"].(string)
