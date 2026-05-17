@@ -113,9 +113,43 @@ export const sendWebSocketMessage = (ws, content) => {
 
 // ==================== 工具 API ====================
 
-// 获取可用工具列表
-export const getTools = async () => {
+// 获取所有工具
+export const getAllTools = async () => {
   const response = await api.get('/tools')
+  return response.data
+}
+
+// 获取单个工具详情
+export const getTool = async (toolName) => {
+  const response = await api.get(`/tools/${toolName}`)
+  return response.data
+}
+
+// 启用工具
+export const enableTool = async (toolName) => {
+  const response = await api.put(`/tools/${toolName}/enable`)
+  return response.data
+}
+
+// 禁用工具
+export const disableTool = async (toolName) => {
+  const response = await api.put(`/tools/${toolName}/disable`)
+  return response.data
+}
+
+// 导入工具
+export const importTool = async (formData) => {
+  const response = await api.post('/tools/import', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+  return response.data
+}
+
+// 删除工具
+export const deleteTool = async (toolName) => {
+  const response = await api.delete(`/tools/${toolName}`)
   return response.data
 }
 
@@ -218,7 +252,12 @@ const apiService = {
   createWebSocketConnection,
   sendWebSocketMessage,
   // 工具
-  getTools,
+  getAllTools,
+  getTool,
+  enableTool,
+  disableTool,
+  importTool,
+  deleteTool,
   executeTool,
   // 记忆
   getMemories,

@@ -105,6 +105,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		ToolsDir:             cfg.Tools.ToolsDir,
 		SkillsDir:            cfg.Tools.SkillsDir,
 		PythonPath:           cfg.Tools.PythonPath,
+		DisabledTools:        cfg.DisabledTools,
 		ConvCompressDisabled: cfg.ConvCompress.Disabled,
 		ConvCompressRound:    cfg.ConvCompress.Round,
 		ConvCompressLength:   cfg.ConvCompress.Length,

@@ -45,15 +45,16 @@ type ConversationCompressConfig struct {
 
 // Config holds the entire application configuration
 type Config struct {
-	Models map[string]ModelConfig `yaml:"models"`
-	Agents map[string]AgentConfig `yaml:"agents"`
-	Tools  struct {
+	Models        map[string]ModelConfig            `yaml:"models"`
+	Agents        map[string]AgentConfig            `yaml:"agents"`
+	Tools         struct {
 		PythonPath string `yaml:"python_path"`
 		ToolsDir   string `yaml:"tools_dir"`
 		SkillsDir  string `yaml:"skills_dir"`
 	} `yaml:"tools"`
-	ToolGenerator ToolGeneratorConfig        `yaml:"tool_generator,omitempty"`
+	ToolGenerator ToolGeneratorConfig `yaml:"tool_generator,omitempty"`
 	ConvCompress  ConversationCompressConfig `yaml:"conversation_compress"`
+	DisabledTools []string `yaml:"disabled_tools,omitempty"`
 }
 
 // Load reads and parses the configuration file

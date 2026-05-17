@@ -50,21 +50,28 @@ type StreamCallback func(line string) error
 
 // Executor handles tool execution
 type Executor struct {
-	pythonPath string
-	toolsDir   string
-	tools      map[string]Tool
-	debug      bool
+	pythonPath    string
+	toolsDir      string
+	tools         map[string]Tool
+	disabledTools []string // 禁用的工具名称列表
+	debug         bool
 }
 
 // NewExecutor creates a new tool executor
-func NewExecutor(pythonPath, toolsDir string, debug bool) *Executor {
+func NewExecutor(pythonPath, toolsDir string, disabledTools []string, debug bool) *Executor {
 	executor := &Executor{
-		pythonPath: pythonPath,
-		toolsDir:   toolsDir,
-		tools:      make(map[string]Tool),
-		debug:      debug,
+		pythonPath:    pythonPath,
+		toolsDir:      toolsDir,
+		tools:         make(map[string]Tool),
+		disabledTools: disabledTools,
+		debug:         debug,
 	}
 	return executor
+}
+
+// UpdateDisabledTools updates the disabled tools list
+func (e *Executor) UpdateDisabledTools(disabledTools []string) {
+	e.disabledTools = disabledTools
 }
 
 // RegisterTool registers a tool with the executor
@@ -80,6 +87,14 @@ func (e *Executor) GetTool(name string) (Tool, bool) {
 
 // ExecuteWithStream executes a tool with the given arguments and streams output
 func (e *Executor) ExecuteWithStream(ctx context.Context, toolName string, args map[string]interface{}, callback StreamCallback) (*ToolResult, error) {
+	// Check if tool is disabled
+	if e.isToolDisabled(toolName) {
+		return &ToolResult{
+			Success: false,
+			Error:   fmt.Sprintf("tool '%s' is disabled", toolName),
+		}, ErrToolNotFound
+	}
+
 	// First check registered tools
 	if tool, ok := e.tools[toolName]; ok {
 		result, err := tool.Execute(ctx, args)
@@ -273,4 +288,31 @@ func (e *Executor) ListTools() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// GetRegisteredTools returns all registered built-in tools with their info
+func (e *Executor) GetRegisteredTools() []ToolInfo {
+	tools := make([]ToolInfo, 0, len(e.tools))
+
+	for _, tool := range e.tools {
+		enabled := !e.isToolDisabled(tool.Name())
+		tools = append(tools, ToolInfo{
+			Name:        tool.Name(),
+			Type:        "builtin",
+			Description: tool.Description(),
+			Enabled:     enabled,
+		})
+	}
+
+	return tools
+}
+
+// isToolDisabled checks if a tool is in the disabled list
+func (e *Executor) isToolDisabled(name string) bool {
+	for _, disabled := range e.disabledTools {
+		if disabled == name {
+			return true
+		}
+	}
+	return false
 }

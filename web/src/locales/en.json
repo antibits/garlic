@@ -19,7 +19,8 @@
     "confirm": "Confirm",
     "close": "Close",
     "settings": "Settings",
-    "search": "Search"
+    "search": "Search",
+    "back": "Back"
   },
   "chat": {
     "welcome": "Welcome to Garlic AI Agent",
@@ -56,16 +57,48 @@
     "session": "Session"
   },
   "tools": {
-    "title": "Tools",
+    "title": "Tool Management",
     "addTool": "Add Tool",
+    "importTool": "Import Tool",
     "noTools": "No tools available",
     "loading": "Loading...",
+    "builtin": "Built-in",
+    "python": "Python",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "description": "Description",
+    "type": "Type",
+    "status": "Status",
+    "actions": "Actions",
+    "cannotDisable": "Built-in tools cannot be disabled",
+    "importSuccess": "Tool imported successfully",
+    "importFailed": "Import failed",
+    "deleteConfirm": "Are you sure you want to delete tool \"{{name}}\"?",
+    "deleteSuccess": "Tool deleted successfully",
+    "deleteFailed": "Delete failed",
+    "enableSuccess": "Tool enabled",
+    "disableSuccess": "Tool disabled",
+    "enableFailed": "Enable failed",
+    "disableFailed": "Disable failed",
     "webrowser": "Web Browser",
     "webrowserDesc": "Search the internet or browse web pages for information",
     "fileViewer": "File Viewer",
     "fileViewerDesc": "View and analyze file content",
     "codeGen": "Code Generation",
-    "codeGenDesc": "Automatically generate Python tool scripts"
+    "codeGenDesc": "Automatically generate Python tool scripts",
+    "importForm": {
+      "title": "Import Tool",
+      "name": "Tool Name",
+      "namePlaceholder": "Enter tool name (letters, numbers, underscores)",
+      "file": "Tool File",
+      "fileHint": "Upload a zip containing main.py or upload main.py directly (description will be auto-generated from main.py -h)",
+      "author": "Author",
+      "authorPlaceholder": "Tool author",
+      "version": "Version",
+      "versionPlaceholder": "e.g., 1.0.0",
+      "uploading": "Uploading...",
+      "import": "Import"
+    }
   },
   "outputs": {
     "title": "Outputs",

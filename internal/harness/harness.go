@@ -41,6 +41,7 @@ type Config struct {
 	SkillsDir            string
 	PythonPath           string
 	Debug                bool
+	DisabledTools        []string
 	ConvCompressDisabled bool
 	ConvCompressRound    int
 	ConvCompressLength   int
@@ -58,7 +59,7 @@ type AgentClients struct {
 
 // NewHarness creates a new harness with the given configuration
 func NewHarness(cfg *Config, clients AgentClients) *Harness {
-	executor := tool.NewExecutor(cfg.PythonPath, cfg.ToolsDir, cfg.Debug)
+	executor := tool.NewExecutor(cfg.PythonPath, cfg.ToolsDir, cfg.DisabledTools, cfg.Debug)
 
 	sessionManager := session.NewManager(".sessions")
 	// Load existing sessions from disk
@@ -121,10 +122,22 @@ func (h *Harness) UpdateAgents(clients AgentClients) {
 // UpdateConfig updates the harness configuration
 func (h *Harness) UpdateConfig(cfg *Config) {
 	h.config = cfg
+	
+	// 更新 executor 的 disabledTools
+	if h.executor != nil {
+		h.executor.UpdateDisabledTools(cfg.DisabledTools)
+	}
+	
+	// 更新 executorAgent 的 toolDiscovery 的 disabledTools
+	if h.executorAgent != nil && h.executorAgent.GetToolDiscovery() != nil {
+		h.executorAgent.GetToolDiscovery().UpdateDisabledTools(cfg.DisabledTools)
+	}
+	
 	logger.Info("Harness configuration updated",
 		zap.Bool("convCompressDisabled", cfg.ConvCompressDisabled),
 		zap.Int("convCompressRound", cfg.ConvCompressRound),
-		zap.Int("convCompressLength", cfg.ConvCompressLength))
+		zap.Int("convCompressLength", cfg.ConvCompressLength),
+		zap.Strings("disabledTools", cfg.DisabledTools))
 }
 
 // Close shuts down the harness and all session workers
@@ -134,20 +147,16 @@ func (h *Harness) Close() {
 	}
 }
 
-// registerBuiltinTools registers built-in Go tools to the executor agent's ToolDiscovery
+// registerBuiltinTools registers built-in Go tools to the executor
 func (h *Harness) registerBuiltinTools() {
-	// Get the ToolDiscovery from executor agent and register built-in tools
-	if h.executorAgent != nil {
-		freader := tool.FileReaderTool{}
-		h.executorAgent.RegisterBuiltinTool(freader.Name(), freader.Description())
+	freader := &tool.FileReaderTool{}
+	h.executor.RegisterTool(freader)
 
-		fwriter := tool.FileWriterTool{}
-		h.executorAgent.RegisterBuiltinTool(fwriter.Name(), fwriter.Description())
+	fwriter := &tool.FileWriterTool{}
+	h.executor.RegisterTool(fwriter)
 
-		cmdexec := tool.NewCmdExecTool()
-		h.executorAgent.RegisterBuiltinTool(cmdexec.Name(), cmdexec.Description())
-		h.executor.RegisterTool(cmdexec)
-	}
+	cmdexec := tool.NewCmdExecTool()
+	h.executor.RegisterTool(cmdexec)
 }
 
 // startSessionWorkers starts goroutines for all sessions to process requests
@@ -532,6 +541,56 @@ func (h *Harness) GetExecutor() *tool.Executor {
 // GetSkillDiscovery returns the skill discovery
 func (h *Harness) GetSkillDiscovery() *skill.Discovery {
 	return h.skillDiscovery
+}
+
+// GetToolDiscovery returns the tool discovery
+func (h *Harness) GetToolDiscovery() *tool.ToolDiscovery {
+	if h.executorAgent != nil {
+		return h.executorAgent.GetToolDiscovery()
+	}
+	return nil
+}
+
+// GetAllTools returns all available tools (built-in + Python)
+func (h *Harness) GetAllTools(ctx context.Context) ([]tool.ToolInfo, error) {
+	var allTools []tool.ToolInfo
+
+	// Get built-in tools from executor
+	if h.executor != nil {
+		builtinTools := h.executor.GetRegisteredTools()
+		allTools = append(allTools, builtinTools...)
+	}
+
+	// Get Python tools from discovery
+	if h.executorAgent != nil && h.executorAgent.GetToolDiscovery() != nil {
+		pythonTools, err := h.executorAgent.GetToolDiscovery().GetTools(ctx)
+		if err != nil {
+			logger.Warn("Failed to get Python tools from discovery", zap.Error(err))
+		} else {
+			allTools = append(allTools, pythonTools...)
+		}
+	}
+
+	return allTools, nil
+}
+
+// RefreshTools 刷新工具发现，扫描 Python 工具
+func (h *Harness) RefreshTools(ctx context.Context) error {
+	if h.executorAgent != nil && h.executorAgent.GetToolDiscovery() != nil {
+		logger.Info("Refreshing tool discovery...")
+		tools, err := h.executorAgent.GetToolDiscovery().GetTools(ctx)
+		if err != nil {
+			logger.Warn("Failed to get tools from discovery", zap.Error(err))
+			return err
+		}
+		logger.Info("Tool discovery completed", zap.Int("tool_count", len(tools)))
+		for _, tool := range tools {
+			logger.Debug("Discovered tool", zap.String("name", tool.Name), zap.String("type", "discovered"))
+		}
+		return nil
+	}
+	logger.Warn("Executor agent or tool discovery is nil")
+	return nil
 }
 
 // HandleSessionCommand handles session management commands

@@ -19,7 +19,8 @@
     "confirm": "确定",
     "close": "关闭",
     "settings": "设置",
-    "search": "搜索"
+    "search": "搜索",
+    "back": "返回"
   },
   "chat": {
     "welcome": "欢迎使用 Garlic AI Agent",
@@ -56,16 +57,48 @@
     "session": "会话"
   },
   "tools": {
-    "title": "工具",
+    "title": "工具管理",
     "addTool": "添加工具",
+    "importTool": "导入工具",
     "noTools": "暂无工具",
     "loading": "加载中...",
+    "builtin": "内置工具",
+    "python": "Python 工具",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "description": "描述",
+    "type": "类型",
+    "status": "状态",
+    "actions": "操作",
+    "cannotDisable": "内置工具不可禁用",
+    "importSuccess": "工具导入成功",
+    "importFailed": "导入失败",
+    "deleteConfirm": "确定要删除工具 \"{{name}}\" 吗？",
+    "deleteSuccess": "工具删除成功",
+    "deleteFailed": "删除失败",
+    "enableSuccess": "工具已启用",
+    "disableSuccess": "工具已禁用",
+    "enableFailed": "启用失败",
+    "disableFailed": "禁用失败",
     "webrowser": "网页浏览",
     "webrowserDesc": "搜索互联网或浏览网页获取信息",
     "fileViewer": "文件查看",
     "fileViewerDesc": "查看和分析文件内容",
     "codeGen": "代码生成",
-    "codeGenDesc": "自动生成 Python 工具脚本"
+    "codeGenDesc": "自动生成 Python 工具脚本",
+    "importForm": {
+      "title": "导入工具",
+      "name": "工具名称",
+      "namePlaceholder": "输入工具名称（英文、数字、下划线）",
+      "file": "工具文件",
+      "fileHint": "上传包含 main.py 的压缩包或直接上传 main.py（描述将自动从 main.py -h 获取）",
+      "author": "作者",
+      "authorPlaceholder": "工具作者",
+      "version": "版本",
+      "versionPlaceholder": "例如：1.0.0",
+      "uploading": "上传中...",
+      "import": "导入"
+    }
   },
   "outputs": {
     "title": "产出",

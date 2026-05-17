@@ -444,7 +444,7 @@ func sanitizeDirName(name string) string {
 	result := strings.ToLower(name)
 	result = strings.ReplaceAll(result, " ", "_")
 	result = strings.ReplaceAll(result, "-", "_")
-	
+
 	// Keep alphanumeric, underscore, and non-ASCII characters (like Chinese)
 	var sanitized strings.Builder
 	for _, r := range result {
@@ -452,19 +452,19 @@ func sanitizeDirName(name string) string {
 			sanitized.WriteRune(r)
 		}
 	}
-	
+
 	return sanitized.String()
 }
 
 // generateSkillMarkdown generates a complete Skill.md file with YAML Front Matter
 func generateSkillMarkdown(name, description, content string) string {
 	now := time.Now().Format("2006-01-02")
-	
+
 	// If content doesn't start with #, add a title
 	if !strings.HasPrefix(strings.TrimSpace(content), "#") {
 		content = fmt.Sprintf("# %s\n\n%s", name, content)
 	}
-	
+
 	metadata := fmt.Sprintf(`---
 name: "%s"
 description: "%s"
@@ -477,6 +477,6 @@ tools: []
 ---
 
 %s`, name, description, now, now, content)
-	
+
 	return metadata
 }

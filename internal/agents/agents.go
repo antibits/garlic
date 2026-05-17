@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -16,6 +17,14 @@ import (
 	"github.com/kaptinlin/jsonrepair"
 	"github.com/openai/openai-go"
 )
+
+var (
+	new_line_pattern, _ = regexp.Compile("[(\r)?\n]+")
+)
+
+func descInline(desc string)string{
+	return string(new_line_pattern.ReplaceAll([]byte(desc), []byte("<br/>")))
+}
 
 // SummarizerAgent handles conversation summarization
 type SummarizerAgent struct {
@@ -223,11 +232,11 @@ Current Time: {{.current_time}}
 
 // ExecutorResult represents the result of executor agent's tool selection
 type ExecutorResult struct {
-	ToolName    string                 `json:"tool"`
-	ToolArgs    map[string]interface{} `json:"args"`
-	IsSkill     bool                   `json:"is_skill"`      // true if selected item is a skill
-	SkillPath   string                 `json:"skill_path"`    // Full path to skill directory
-	SkillContent string                `json:"skill_content"` // Full Skill.md content (without front matter)
+	ToolName     string                 `json:"tool"`
+	ToolArgs     map[string]interface{} `json:"args"`
+	IsSkill      bool                   `json:"is_skill"`      // true if selected item is a skill
+	SkillPath    string                 `json:"skill_path"`    // Full path to skill directory
+	SkillContent string                 `json:"skill_content"` // Full Skill.md content (without front matter)
 }
 
 // ExecutorAgent handles tool selection based on tasks
@@ -240,11 +249,11 @@ type ExecutorAgent struct {
 }
 
 // NewExecutorAgent creates a new executor agent
-func NewExecutorAgent(client *llm.Client, systemPrompt string, toolsDir, skillsDir, pythonPath string) *ExecutorAgent {
+func NewExecutorAgent(client *llm.Client, systemPrompt string, toolsDir, skillsDir, pythonPath string, disabledTools []string) *ExecutorAgent {
 	return &ExecutorAgent{
 		client:         client,
 		systemPrompt:   systemPrompt,
-		toolDiscovery:  tool.NewToolDiscovery(toolsDir, pythonPath),
+		toolDiscovery:  tool.NewToolDiscovery(toolsDir, pythonPath, disabledTools),
 		skillDiscovery: skill.NewDiscovery(skillsDir),
 		platform:       getPlatformName(),
 	}
@@ -264,9 +273,9 @@ func getPlatformName() string {
 	}
 }
 
-// RegisterBuiltinTool registers a built-in Go tool to the tool discovery
-func (e *ExecutorAgent) RegisterBuiltinTool(name, description string) {
-	e.toolDiscovery.RegisterBuiltinTool(name, description)
+// GetToolDiscovery returns the tool discovery
+func (e *ExecutorAgent) GetToolDiscovery() *tool.ToolDiscovery {
+	return e.toolDiscovery
 }
 
 // getAvailableTools dynamically fetches the current list of available tools
@@ -402,7 +411,7 @@ Current Time: {{.current_time}}
 `)
 	for _, tool := range availableTools {
 		tools.WriteString(
-			fmt.Sprintf("|%s|%s|\n", strings.ReplaceAll(strings.ReplaceAll(tool.Name, "|", ","), "\n", "\t"), strings.ReplaceAll(strings.ReplaceAll(tool.Description, "|", ","), "\n", "\t")))
+			fmt.Sprintf("|%s|%s|\n", strings.ReplaceAll(strings.ReplaceAll(tool.Name, "|", ","), "\n", "\t"), strings.ReplaceAll(strings.ReplaceAll(descInline(tool.Description), "|", ","), "\n", "\t")))
 	}
 
 	var skills strings.Builder
@@ -417,7 +426,7 @@ Current Time: {{.current_time}}
 		skills.WriteString(
 			fmt.Sprintf("|%s|%s|%s|%s|\n",
 				strings.ReplaceAll(strings.ReplaceAll(sk.Name, "|", ","), "\n", "\t"),
-				strings.ReplaceAll(strings.ReplaceAll(sk.Description, "|", ","), "\n", "\t"),
+				strings.ReplaceAll(strings.ReplaceAll(descInline(sk.Description), "|", ","), "\n", "\t"),
 				sk.Metadata.Version,
 				strings.ReplaceAll(strings.ReplaceAll(tags, "|", ","), "\n", "\t")))
 	}

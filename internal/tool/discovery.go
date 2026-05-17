@@ -3,61 +3,59 @@ package tool
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
-)
 
-var (
-	new_line_pattern, _ = regexp.Compile("[(\r)?\n]+")
+	"github.com/antibits/garlic/internal/logger"
+	"go.uber.org/zap"
 )
 
 // ToolInfo contains information about a tool
 type ToolInfo struct {
 	Name        string `json:"name"`
+	Type        string `json:"type"` // "builtin" or "python"
 	Description string `json:"description"`
+	Enabled     bool   `json:"enabled"`
 	ToolPath    string `json:"tool_path"`
+}
+
+// toolCacheEntry 单个工具的缓存条目
+type toolCacheEntry struct {
+	Description string
+	ModTime     int64 // 文件修改时间
 }
 
 // ToolDiscovery handles discovering and caching tool descriptions
 type ToolDiscovery struct {
 	toolsDir      string
 	pythonPath    string
-	builtinTools  []ToolInfo // Built-in Go tools
-	cache         map[string]ToolInfo
-	cacheHash     string
-	lastCheck     time.Time
+	disabledTools []string              // 禁用的工具名称列表
+	cache         map[string]toolCacheEntry // 每个工具的独立缓存
 	mu            sync.RWMutex
-	checkInterval time.Duration
 }
 
 // NewToolDiscovery creates a new tool discovery instance
-func NewToolDiscovery(toolsDir, pythonPath string) *ToolDiscovery {
+func NewToolDiscovery(toolsDir, pythonPath string, disabledTools []string) *ToolDiscovery {
 	return &ToolDiscovery{
 		toolsDir:      toolsDir,
 		pythonPath:    pythonPath,
-		builtinTools:  make([]ToolInfo, 0),
-		cache:         make(map[string]ToolInfo),
-		checkInterval: 5 * time.Second, // Minimum time between directory scans
+		disabledTools: disabledTools,
+		cache:         make(map[string]toolCacheEntry),
 	}
 }
 
-// RegisterBuiltinTool registers a built-in Go tool
-func (d *ToolDiscovery) RegisterBuiltinTool(name, description string) {
-	d.builtinTools = append(d.builtinTools, ToolInfo{
-		Name:        name,
-		Description: description,
-		ToolPath:    "", // Built-in tools don't have a script path
-	})
+// UpdateDisabledTools updates the disabled tools list
+func (d *ToolDiscovery) UpdateDisabledTools(disabledTools []string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.disabledTools = disabledTools
 }
 
 // GetTools returns all discovered tools with their descriptions
@@ -65,97 +63,76 @@ func (d *ToolDiscovery) GetTools(ctx context.Context) ([]ToolInfo, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// Check if cache is still valid (within checkInterval)
-	if time.Since(d.lastCheck) < d.checkInterval {
-		return d.cachedToolsList(), nil
-	}
-
-	// Directory changed or cache empty, re-discover Python tools
-	d.cacheHash = ""
-	d.cache = make(map[string]ToolInfo)
-
-	tools, err := d.discoverTools(ctx)
+	// 扫描工具目录获取工具列表（轻量级操作）
+	entries, err := d.scanToolDirectories()
 	if err != nil {
-		// Return partial cache on error (including built-in tools)
-		return d.cachedToolsList(), nil
+		return nil, err
 	}
 
-	for _, tool := range tools {
-		d.cache[tool.Name] = tool
-	}
+	result := make([]ToolInfo, 0, len(entries))
 
-	d.lastCheck = time.Now()
-	return d.cachedToolsList(), nil
-}
+	for _, entry := range entries {
+		toolPath := filepath.Join(d.toolsDir, entry)
+		mainPyPath := filepath.Join(toolPath, "main.py")
 
-// cachedToolsList returns the cached tools as a sorted slice
-func (d *ToolDiscovery) cachedToolsList() []ToolInfo {
-	// Combine built-in tools and discovered Python tools
-	result := make([]ToolInfo, 0, len(d.builtinTools)+len(d.cache))
+		// 获取文件修改时间
+		modTime := d.getFileModTime(mainPyPath)
 
-	// Add built-in tools
-	result = append(result, d.builtinTools...)
+		// 检查缓存是否有效
+		if cacheEntry, ok := d.cache[entry]; ok && cacheEntry.ModTime == modTime {
+			// 缓存命中，直接使用
+			result = append(result, ToolInfo{
+				Name:        entry,
+				Type:        "python",
+				Description: cacheEntry.Description,
+				Enabled:     !d.isToolDisabled(entry),
+				ToolPath:    toolPath,
+			})
+			continue
+		}
 
-	// Add discovered Python tools
-	for _, tool := range d.cache {
-		result = append(result, tool)
+		// 缓存未命中或文件已修改，按需加载描述
+		description, err := d.getToolDescriptionFromScript(ctx, toolPath)
+		if err != nil {
+			logger.Warn("Failed to get tool description, using fallback",
+				zap.String("name", entry),
+				zap.Error(err))
+			description = fmt.Sprintf("Tool: %s", entry)
+		}
+
+		// 更新缓存
+		d.cache[entry] = toolCacheEntry{
+			Description: description,
+			ModTime:     modTime,
+		}
+
+		result = append(result, ToolInfo{
+			Name:        entry,
+			Type:        "python",
+			Description: description,
+			Enabled:     !d.isToolDisabled(entry),
+			ToolPath:    toolPath,
+		})
 	}
 
 	// Sort by name for consistent ordering
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].Name < result[j].Name
 	})
-	return result
+
+	logger.Info("Tool discovery completed", zap.Int("tool_count", len(result)))
+	return result, nil
 }
 
-// computeDirHash computes a hash of the tools directory structure
-func (d *ToolDiscovery) computeDirHash() (string, error) {
-	var paths []string
-
-	err := filepath.Walk(d.toolsDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Skip __pycache__ and hidden directories
-		if info.IsDir() && (strings.HasPrefix(info.Name(), "__") || strings.HasPrefix(info.Name(), ".")) {
-			return filepath.SkipDir
-		}
-
-		// Only consider main.py files for tool directories
-		if !info.IsDir() && filepath.Base(path) == "main.py" {
-			relPath, _ := filepath.Rel(d.toolsDir, path)
-			paths = append(paths, relPath)
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return "", err
-	}
-
-	// Sort for consistent hashing
-	sort.Strings(paths)
-
-	// Compute hash
-	hash := sha256.New()
-	for _, path := range paths {
-		hash.Write([]byte(path))
-	}
-
-	return hex.EncodeToString(hash.Sum(nil)), nil
-}
-
-// discoverTools scans the tools directory and extracts tool information
-func (d *ToolDiscovery) discoverTools(ctx context.Context) ([]ToolInfo, error) {
-	var tools []ToolInfo
-
+// scanToolDirectories 扫描工具目录，返回工具名称列表（不执行 main.py -h）
+func (d *ToolDiscovery) scanToolDirectories() ([]string, error) {
 	entries, err := os.ReadDir(d.toolsDir)
 	if err != nil {
+		logger.Error("Failed to read tools directory", zap.Error(err), zap.String("tools_dir", d.toolsDir))
 		return nil, fmt.Errorf("failed to read tools directory: %w", err)
 	}
 
+	var toolNames []string
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -166,28 +143,35 @@ func (d *ToolDiscovery) discoverTools(ctx context.Context) ([]ToolInfo, error) {
 			continue
 		}
 
-		toolPath := filepath.Join(d.toolsDir, entry.Name())
-
 		// Check if main.py exists
-		if _, err := os.Stat(filepath.Join(toolPath, "main.py")); os.IsNotExist(err) {
+		mainPyPath := filepath.Join(d.toolsDir, entry.Name(), "main.py")
+		if _, err := os.Stat(mainPyPath); os.IsNotExist(err) {
 			continue
 		}
 
-		// Get tool description by running main.py -h
-		description, err := d.getToolDescriptionFromScript(ctx, toolPath)
-		if err != nil {
-			// Use directory name as fallback
-			description = fmt.Sprintf("Tool: %s", entry.Name())
-		}
-
-		tools = append(tools, ToolInfo{
-			Name:        entry.Name(),
-			Description: description,
-			ToolPath:    toolPath,
-		})
+		toolNames = append(toolNames, entry.Name())
 	}
 
-	return tools, nil
+	return toolNames, nil
+}
+
+// getFileModTime 获取文件修改时间（Unix 时间戳）
+func (d *ToolDiscovery) getFileModTime(path string) int64 {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return info.ModTime().Unix()
+}
+
+// isToolDisabled checks if a tool is in the disabled list
+func (d *ToolDiscovery) isToolDisabled(name string) bool {
+	for _, disabled := range d.disabledTools {
+		if disabled == name {
+			return true
+		}
+	}
+	return false
 }
 
 // getToolDescriptionFromScript runs main.py -h and extracts the description
@@ -216,7 +200,8 @@ func (d *ToolDiscovery) getToolDescriptionFromScript(ctx context.Context, toolPa
 		return "", fmt.Errorf("no help output from script")
 	}
 
-	return string(new_line_pattern.ReplaceAll([]byte(output), []byte("<br/>"))), nil
+	return output, nil
+	// return string(new_line_pattern.ReplaceAll([]byte(output), []byte("<br/>"))), nil
 
 	// // Extract the first line or description from help output
 	// // Typically: "usage: ..." followed by description

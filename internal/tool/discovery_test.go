@@ -40,7 +40,7 @@ if __name__ == "__main__":
 	}
 
 	// Create discovery instance
-	discovery := NewToolDiscovery(toolsDir, "python")
+	discovery := NewToolDiscovery(toolsDir, "python", nil)
 
 	// Test GetTools
 	ctx := context.Background()
@@ -75,7 +75,7 @@ func TestToolDiscoveryCacheInvalidation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	discovery := NewToolDiscovery(toolsDir, "python")
+	discovery := NewToolDiscovery(toolsDir, "python", nil)
 	// Set a very short check interval for testing
 	discovery.checkInterval = 1 * time.Millisecond
 
@@ -140,7 +140,7 @@ if __name__ == "__main__":
 		t.Fatal(err)
 	}
 
-	discovery := NewToolDiscovery(toolsDir, "python")
+	discovery := NewToolDiscovery(toolsDir, "python", nil)
 	ctx := context.Background()
 
 	tools, err := discovery.GetTools(ctx)

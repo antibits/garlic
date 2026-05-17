@@ -187,6 +187,11 @@ tools:
   tools_dir: tools
   skills_dir: skills
 
+# 禁用的外部 Python 工具名称列表
+# 在此列出的工具将不会被加载和执行
+disabled_tools:
+  # - webrowser  # 示例：禁用 webrowser 工具
+
 # Tool Generator - Optional configuration for generating new tools
 # When enabled, the agent can create new Python tools from descriptions
 tool_generator:

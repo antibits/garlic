@@ -147,6 +147,12 @@ func (s *Server) setupRoutes() {
 		api.POST("/skills", s.createSkill)
 		api.PUT("/skills/:name", s.updateSkill)
 		api.DELETE("/skills/:name", s.deleteSkill)
+
+		// 工具管理
+		api.GET("/tools", s.listTools)
+		api.GET("/tools/:name", s.getTool)
+		api.PUT("/tools/:name/disable", s.disableTool)
+		api.PUT("/tools/:name/enable", s.enableTool)
 	}
 
 	// WebSocket 连接
@@ -685,6 +691,7 @@ type WebConfig struct {
 	Tools         ToolsConfigWeb            `json:"tools"`
 	ToolGenerator ToolGeneratorConfigWeb    `json:"tool_generator"`
 	ConvCompress  ConversationCompressWeb   `json:"conversation_compress"`
+	DisabledTools []string                  `json:"disabled_tools"`
 }
 
 type ModelConfigWeb struct {
@@ -717,6 +724,19 @@ type ConversationCompressWeb struct {
 	Length   int  `json:"length"`
 }
 
+// saveConfig 将当前配置写入文件
+func (s *Server) saveConfig() error {
+	data, err := yaml.Marshal(s.config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+	if err := os.WriteFile(s.configPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+	logger.Info("Configuration saved", zap.String("path", s.configPath))
+	return nil
+}
+
 // getConfig 获取配置
 func (s *Server) getConfig(c *gin.Context) {
 	webCfg := WebConfig{
@@ -732,6 +752,7 @@ func (s *Server) getConfig(c *gin.Context) {
 			Round:    s.config.ConvCompress.Round,
 			Length:   s.config.ConvCompress.Length,
 		},
+		DisabledTools: s.config.DisabledTools,
 	}
 
 	// 转换 models
@@ -812,6 +833,7 @@ func (s *Server) updateConfig(c *gin.Context) {
 	newCfg.ConvCompress.Disabled = webCfg.ConvCompress.Disabled
 	newCfg.ConvCompress.Round = webCfg.ConvCompress.Round
 	newCfg.ConvCompress.Length = webCfg.ConvCompress.Length
+	newCfg.DisabledTools = webCfg.DisabledTools
 
 	// 写入配置文件
 	data, err := yaml.Marshal(newCfg)
@@ -853,6 +875,7 @@ func (s *Server) updateConfig(c *gin.Context) {
 	harnessCfg := &harness.Config{
 		ToolsDir:             newCfg.Tools.ToolsDir,
 		PythonPath:           newCfg.Tools.PythonPath,
+		DisabledTools:        newCfg.DisabledTools,
 		ConvCompressDisabled: newCfg.ConvCompress.Disabled,
 		ConvCompressRound:    newCfg.ConvCompress.Round,
 		ConvCompressLength:   newCfg.ConvCompress.Length,
@@ -1028,5 +1051,222 @@ func (s *Server) deleteSkill(c *gin.Context) {
 	c.JSON(http.StatusOK, Response{
 		Success: true,
 		Data:    map[string]string{"message": fmt.Sprintf("Skill '%s' deleted successfully", name)},
+	})
+}
+
+// ToolInfo API 响应结构
+type ToolInfo struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	Enabled     bool   `json:"enabled"`
+	ToolPath    string `json:"tool_path,omitempty"`
+}
+
+// listTools 获取所有工具
+func (s *Server) listTools(c *gin.Context) {
+	// 先触发工具发现，扫描 Python 工具
+	ctx := c.Request.Context()
+	if err := s.harness.RefreshTools(ctx); err != nil {
+		logger.Warn("Failed to refresh tools", zap.Error(err))
+	}
+
+	// 获取所有工具（内置 + Python）
+	tools, err := s.harness.GetAllTools(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	toolInfos := make([]ToolInfo, 0, len(tools))
+	for _, t := range tools {
+		toolInfos = append(toolInfos, ToolInfo{
+			Name:        t.Name,
+			Type:        t.Type,
+			Description: t.Description,
+			Enabled:     t.Enabled,
+			ToolPath:    t.ToolPath,
+		})
+	}
+
+	c.JSON(http.StatusOK, Response{
+		Success: true,
+		Data: map[string]interface{}{
+			"tools":       toolInfos,
+			"total_count": len(toolInfos),
+		},
+	})
+}
+
+// getTool 获取单个工具详情
+func (s *Server) getTool(c *gin.Context) {
+	name := c.Param("name")
+
+	// 获取所有工具（内置 + Python）
+	tools, err := s.harness.GetAllTools(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	// 查找指定工具
+	for _, tool := range tools {
+		if tool.Name == name {
+			c.JSON(http.StatusOK, Response{
+				Success: true,
+				Data: ToolInfo{
+					Name:        tool.Name,
+					Description: tool.Description,
+					ToolPath:    tool.ToolPath,
+				},
+			})
+			return
+		}
+	}
+
+	c.JSON(http.StatusNotFound, Response{
+		Success: false,
+		Error:   fmt.Sprintf("tool '%s' not found", name),
+	})
+}
+
+// disableTool 禁用工具
+func (s *Server) disableTool(c *gin.Context) {
+	name := c.Param("name")
+
+	// 检查工具是否存在
+	tools, err := s.harness.GetAllTools(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	toolFound := false
+	isBuiltin := false
+	for _, tool := range tools {
+		if tool.Name == name {
+			toolFound = true
+			isBuiltin = (tool.Type == "builtin")
+			break
+		}
+	}
+
+	if !toolFound {
+		c.JSON(http.StatusNotFound, Response{
+			Success: false,
+			Error:   fmt.Sprintf("tool '%s' not found", name),
+		})
+		return
+	}
+
+	if isBuiltin {
+		c.JSON(http.StatusBadRequest, Response{
+			Success: false,
+			Error:   "builtin tools cannot be disabled",
+		})
+		return
+	}
+
+	// 添加到禁用列表
+	// 检查是否已经禁用
+	for _, disabled := range s.config.DisabledTools {
+		if disabled == name {
+			c.JSON(http.StatusOK, Response{
+				Success: true,
+				Data:    map[string]string{"message": fmt.Sprintf("tool '%s' is already disabled", name)},
+			})
+			return
+		}
+	}
+
+	s.config.DisabledTools = append(s.config.DisabledTools, name)
+
+	// 保存配置
+	if err := s.saveConfig(); err != nil {
+		c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Error:   "failed to save config: " + err.Error(),
+		})
+		return
+	}
+
+	// 更新 harness
+	harnessCfg := &harness.Config{
+		ToolsDir:             s.config.Tools.ToolsDir,
+		PythonPath:           s.config.Tools.PythonPath,
+		DisabledTools:        s.config.DisabledTools,
+		ConvCompressDisabled: s.config.ConvCompress.Disabled,
+		ConvCompressRound:    s.config.ConvCompress.Round,
+		ConvCompressLength:   s.config.ConvCompress.Length,
+	}
+	s.harness.UpdateConfig(harnessCfg)
+
+	logger.Info("Tool disabled", zap.String("tool", name))
+
+	c.JSON(http.StatusOK, Response{
+		Success: true,
+		Data:    map[string]string{"message": fmt.Sprintf("tool '%s' disabled successfully", name)},
+	})
+}
+
+// enableTool 启用工具
+func (s *Server) enableTool(c *gin.Context) {
+	name := c.Param("name")
+
+	// 从禁用列表中移除
+	found := false
+	disabledTools := make([]string, 0, len(s.config.DisabledTools))
+	for _, disabled := range s.config.DisabledTools {
+		if disabled == name {
+			found = true
+			continue
+		}
+		disabledTools = append(disabledTools, disabled)
+	}
+
+	if !found {
+		c.JSON(http.StatusOK, Response{
+			Success: true,
+			Data:    map[string]string{"message": fmt.Sprintf("tool '%s' is not disabled", name)},
+		})
+		return
+	}
+
+	s.config.DisabledTools = disabledTools
+
+	// 保存配置
+	if err := s.saveConfig(); err != nil {
+		c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Error:   "failed to save config: " + err.Error(),
+		})
+		return
+	}
+
+	// 更新 harness
+	harnessCfg := &harness.Config{
+		ToolsDir:             s.config.Tools.ToolsDir,
+		PythonPath:           s.config.Tools.PythonPath,
+		DisabledTools:        s.config.DisabledTools,
+		ConvCompressDisabled: s.config.ConvCompress.Disabled,
+		ConvCompressRound:    s.config.ConvCompress.Round,
+		ConvCompressLength:   s.config.ConvCompress.Length,
+	}
+	s.harness.UpdateConfig(harnessCfg)
+
+	logger.Info("Tool enabled", zap.String("tool", name))
+
+	c.JSON(http.StatusOK, Response{
+		Success: true,
+		Data:    map[string]string{"message": fmt.Sprintf("tool '%s' enabled successfully", name)},
 	})
 }
