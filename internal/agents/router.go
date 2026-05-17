@@ -181,6 +181,7 @@ Output: {"intent": "finished"}
 2. **Strict Atomicity:** "current_step" must never contain hidden dependencies or multi-stage verbs. If a step naturally contains "do A, then analyze B", split it so "do A" is the "current_step".
 3. **Context-Aware Completion:** Judge "finished" based on task closure, not just user tone. If the user pauses, asks for adjustments, or provides intermediate feedback, continue routing to the next logical step.
 4. **Format Purity:** Downstream systems parse this via "json.loads()". Any extra characters will cause crashes. Strictly adhere to "Output ONLY the specified content.
+5. **Current Events:** For questions about current events or timely topics, prioritize using tools (e.g., web browser) to gather the latest factual reports and news. Base your response on verified, up-to-date information rather than relying solely on training data.
 
 Current Time: {{.current_time}}
 
