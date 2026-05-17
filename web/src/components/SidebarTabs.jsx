@@ -1,10 +1,11 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { MessageSquare, Wrench, FileText, Brain, Settings, Sun, Moon, Plus, Trash2, Edit2, X, Check } from 'lucide-react'
+import { MessageSquare, Wrench, FileText, Brain, Settings, Sun, Moon, Plus, Trash2, Edit2, X, Check, BookOpen } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import ToolsPanel from './ToolsPanel'
 import OutputsPanel from './OutputsPanel'
 import MemoryPanel from './MemoryPanel'
+import SkillsPanel from './SkillsPanel'
 import api from '../services/api'
 import './SidebarTabs.css'
 
@@ -36,6 +37,7 @@ const SidebarTabs = ({
   const tabs = [
     { id: 'sessions', label: t('tabs.sessions'), icon: MessageSquare },
     { id: 'tools', label: t('tabs.tools'), icon: Wrench },
+    { id: 'skills', label: t('tabs.skills', 'Skills'), icon: BookOpen },
     { id: 'outputs', label: t('tabs.outputs'), icon: FileText },
     { id: 'memory', label: t('tabs.memory'), icon: Brain }
   ]
@@ -221,6 +223,8 @@ const SidebarTabs = ({
         )
       case 'tools':
         return <ToolsPanel />
+      case 'skills':
+        return <SkillsPanel />
       case 'outputs':
         return <OutputsPanel />
       case 'memory':

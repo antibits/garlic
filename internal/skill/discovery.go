@@ -284,3 +284,199 @@ func (d *Discovery) SkillNames(ctx context.Context) string {
 
 	return strings.Join(names, ", ")
 }
+
+// GetSkillByName returns a skill by name
+func (d *Discovery) GetSkillByName(ctx context.Context, name string) (*SkillInfo, error) {
+	skills, err := d.GetSkills(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, skill := range skills {
+		if skill.Name == name {
+			return &skill, nil
+		}
+	}
+
+	return nil, fmt.Errorf("skill '%s' not found", name)
+}
+
+// CreateSkill creates a new skill directory and Skill.md file
+func (d *Discovery) CreateSkill(name, description, content string) error {
+	// Validate inputs
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("skill name cannot be empty")
+	}
+	if strings.TrimSpace(description) == "" {
+		return fmt.Errorf("skill description cannot be empty")
+	}
+
+	// Sanitize skill name for directory
+	skillDir := sanitizeDirName(name)
+	skillPath := filepath.Join(d.skillsDir, skillDir)
+
+	// Check if skill already exists
+	if _, err := os.Stat(skillPath); err == nil {
+		return fmt.Errorf("skill '%s' already exists", name)
+	}
+
+	// Create skill directory
+	if err := os.MkdirAll(skillPath, 0755); err != nil {
+		return fmt.Errorf("failed to create skill directory: %w", err)
+	}
+
+	// Generate Skill.md content with YAML Front Matter
+	skillContent := generateSkillMarkdown(name, description, content)
+
+	// Write Skill.md file
+	skillMdPath := filepath.Join(skillPath, "Skill.md")
+	if err := os.WriteFile(skillMdPath, []byte(skillContent), 0644); err != nil {
+		// Clean up directory on error
+		os.Remove(skillPath)
+		return fmt.Errorf("failed to write Skill.md: %w", err)
+	}
+
+	// Invalidate cache
+	d.mu.Lock()
+	d.cache = make(map[string]SkillInfo)
+	d.lastCheck = time.Time{}
+	d.mu.Unlock()
+
+	return nil
+}
+
+// UpdateSkill updates an existing skill's content
+func (d *Discovery) UpdateSkill(name, description, content string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("skill name cannot be empty")
+	}
+
+	// Find existing skill
+	skillInfo, err := d.GetSkillByName(context.Background(), name)
+	if err != nil {
+		return err
+	}
+
+	// Use provided description or keep existing
+	if strings.TrimSpace(description) == "" {
+		description = skillInfo.Metadata.Description
+	}
+
+	// Generate updated Skill.md content
+	skillContent := generateSkillMarkdown(name, description, content)
+
+	// Write updated Skill.md file
+	skillMdPath := filepath.Join(skillInfo.SkillPath, "Skill.md")
+	if err := os.WriteFile(skillMdPath, []byte(skillContent), 0644); err != nil {
+		return fmt.Errorf("failed to update Skill.md: %w", err)
+	}
+
+	// Invalidate cache
+	d.mu.Lock()
+	d.cache = make(map[string]SkillInfo)
+	d.lastCheck = time.Time{}
+	d.mu.Unlock()
+
+	return nil
+}
+
+// DeleteSkill deletes a skill directory and all its contents
+func (d *Discovery) DeleteSkill(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("skill name cannot be empty")
+	}
+
+	// Find existing skill
+	skillInfo, err := d.GetSkillByName(context.Background(), name)
+	if err != nil {
+		return err
+	}
+
+	// Remove skill directory
+	if err := os.RemoveAll(skillInfo.SkillPath); err != nil {
+		return fmt.Errorf("failed to delete skill directory: %w", err)
+	}
+
+	// Invalidate cache
+	d.mu.Lock()
+	d.cache = make(map[string]SkillInfo)
+	d.lastCheck = time.Time{}
+	d.mu.Unlock()
+
+	return nil
+}
+
+// ListSkills returns a simple list of skill names and descriptions
+func (d *Discovery) ListSkills(ctx context.Context) []struct {
+	Name        string
+	Description string
+	Path        string
+} {
+	skills, err := d.GetSkills(ctx)
+	if err != nil {
+		return nil
+	}
+
+	result := make([]struct {
+		Name        string
+		Description string
+		Path        string
+	}, len(skills))
+
+	for i, skill := range skills {
+		result[i] = struct {
+			Name        string
+			Description string
+			Path        string
+		}{
+			Name:        skill.Name,
+			Description: skill.Description,
+			Path:        skill.SkillPath,
+		}
+	}
+
+	return result
+}
+
+// sanitizeDirName converts a skill name to a valid directory name
+func sanitizeDirName(name string) string {
+	// Replace spaces and special characters with underscores
+	result := strings.ToLower(name)
+	result = strings.ReplaceAll(result, " ", "_")
+	result = strings.ReplaceAll(result, "-", "_")
+	
+	// Keep alphanumeric, underscore, and non-ASCII characters (like Chinese)
+	var sanitized strings.Builder
+	for _, r := range result {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r >= 128 {
+			sanitized.WriteRune(r)
+		}
+	}
+	
+	return sanitized.String()
+}
+
+// generateSkillMarkdown generates a complete Skill.md file with YAML Front Matter
+func generateSkillMarkdown(name, description, content string) string {
+	now := time.Now().Format("2006-01-02")
+	
+	// If content doesn't start with #, add a title
+	if !strings.HasPrefix(strings.TrimSpace(content), "#") {
+		content = fmt.Sprintf("# %s\n\n%s", name, content)
+	}
+	
+	metadata := fmt.Sprintf(`---
+name: "%s"
+description: "%s"
+version: "1.0.0"
+author: "Garlic Team"
+created: "%s"
+updated: "%s"
+tags: []
+tools: []
+---
+
+%s`, name, description, now, now, content)
+	
+	return metadata
+}

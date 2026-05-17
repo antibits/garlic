@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { ThemeProvider } from './contexts/ThemeContext'
 import ChatPage from './pages/ChatPage'
+import SkillManager from './pages/SkillManager'
 import SettingsModal from './components/SettingsModal'
 import api from './services/api'
 import './App.css'
@@ -27,6 +28,12 @@ function App() {
               path="/"
               element={
                 <ChatPage onOpenSettings={() => setSettingsOpen(true)} />
+              }
+            />
+            <Route
+              path="/skills"
+              element={
+                <SkillManager onBack={() => window.history.back()} />
               }
             />
           </Routes>

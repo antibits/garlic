@@ -90,6 +90,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 			"DELETE /api/sessions/{id}  - Delete session",
 			"POST   /api/messages/{id}  - Send message (HTTP)",
 			"WS     /ws/{id}            - WebSocket connection",
+			"GET    /api/skills         - List all skills",
+			"GET    /api/skills/{name}  - Get skill details",
+			"POST   /api/skills         - Create new skill",
+			"PUT    /api/skills/{name}  - Update skill",
+			"DELETE /api/skills/{name}  - Delete skill",
+			"GET    /api/config         - Get configuration",
+			"PUT    /api/config         - Update configuration",
 			"GET    /health             - Health check",
 		}))
 

@@ -163,6 +163,45 @@ export const saveConfig = async (config) => {
   return response.data
 }
 
+// ==================== Skill 管理 API ====================
+
+// 获取所有 skills
+export const getSkills = async () => {
+  const response = await api.get('/skills')
+  return response.data
+}
+
+// 获取单个 skill 详情
+export const getSkill = async (name) => {
+  const response = await api.get(`/skills/${name}`)
+  return response.data
+}
+
+// 创建新 skill
+export const createSkill = async (name, description, content = '') => {
+  const response = await api.post('/skills', {
+    name,
+    description,
+    content
+  })
+  return response.data
+}
+
+// 更新 skill
+export const updateSkill = async (name, description, content) => {
+  const response = await api.put(`/skills/${name}`, {
+    description,
+    content
+  })
+  return response.data
+}
+
+// 删除 skill
+export const deleteSkill = async (name) => {
+  const response = await api.delete(`/skills/${name}`)
+  return response.data
+}
+
 // 导出默认对象
 const apiService = {
   setBaseUrl,
@@ -188,7 +227,13 @@ const apiService = {
   healthCheck,
   // 配置
   getConfig,
-  saveConfig
+  saveConfig,
+  // Skill 管理
+  getSkills,
+  getSkill,
+  createSkill,
+  updateSkill,
+  deleteSkill
 }
 
 export default apiService

@@ -529,6 +529,11 @@ func (h *Harness) GetExecutor() *tool.Executor {
 	return h.executor
 }
 
+// GetSkillDiscovery returns the skill discovery
+func (h *Harness) GetSkillDiscovery() *skill.Discovery {
+	return h.skillDiscovery
+}
+
 // HandleSessionCommand handles session management commands
 func (h *Harness) HandleSessionCommand(input string) {
 	parts := strings.SplitN(input, " ", 2)
@@ -596,6 +601,186 @@ func (h *Harness) HandleSessionCommand(input string) {
 	default:
 		logger.Warn("Unknown command",
 			zap.String("command", command),
-			zap.Strings("available_commands", []string{"/new", "/list", "/switch", "/delete", "/current"}))
+			zap.Strings("available_commands", []string{"/new", "/list", "/switch", "/delete", "/current", "/skill"}))
 	}
+}
+
+// HandleSkillCommand handles skill management commands
+func (h *Harness) HandleSkillCommand(input string) string {
+	parts := strings.SplitN(input, " ", 3)
+	command := ""
+	skillName := ""
+	args := ""
+
+	if len(parts) > 0 {
+		command = strings.TrimSpace(parts[0])
+	}
+	if len(parts) > 1 {
+		skillName = strings.TrimSpace(parts[1])
+	}
+	if len(parts) > 2 {
+		args = strings.TrimSpace(parts[2])
+	}
+
+	ctx := context.Background()
+
+	switch command {
+	case "list":
+		return h.listSkills(ctx)
+
+	case "show":
+		if skillName == "" {
+			return "Error: skill name is required. Usage: /skill show <name>"
+		}
+		return h.showSkill(ctx, skillName)
+
+	case "create":
+		if skillName == "" {
+			return "Error: skill name is required. Usage: /skill create <name> [description]"
+		}
+		description := args
+		if description == "" {
+			description = fmt.Sprintf("Skill: %s", skillName)
+		}
+		return h.createSkill(ctx, skillName, description)
+
+	case "edit":
+		if skillName == "" {
+			return "Error: skill name is required. Usage: /skill edit <name> [content]"
+		}
+		return h.editSkill(ctx, skillName, args)
+
+	case "delete":
+		if skillName == "" {
+			return "Error: skill name is required. Usage: /skill delete <name>"
+		}
+		return h.deleteSkill(ctx, skillName)
+
+	default:
+		return fmt.Sprintf("Unknown skill command: %s\nAvailable commands: list, show, create, edit, delete", command)
+	}
+}
+
+func (h *Harness) listSkills(ctx context.Context) string {
+	skills := h.skillDiscovery.ListSkills(ctx)
+	if len(skills) == 0 {
+		return "No skills available"
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Available skills (%d):\n\n", len(skills)))
+	for _, skill := range skills {
+		sb.WriteString(fmt.Sprintf("• %s\n  %s\n  Path: %s\n\n", skill.Name, skill.Description, skill.Path))
+	}
+	return strings.TrimSpace(sb.String())
+}
+
+func (h *Harness) showSkill(ctx context.Context, name string) string {
+	skill, err := h.skillDiscovery.GetSkillByName(ctx, name)
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("=== Skill: %s ===\n\n", skill.Name))
+	
+	if skill.Metadata.Description != "" {
+		sb.WriteString(fmt.Sprintf("**Description**: %s\n\n", skill.Metadata.Description))
+	}
+	if skill.Metadata.Version != "" {
+		sb.WriteString(fmt.Sprintf("**Version**: %s\n", skill.Metadata.Version))
+	}
+	if skill.Metadata.Author != "" {
+		sb.WriteString(fmt.Sprintf("**Author**: %s\n", skill.Metadata.Author))
+	}
+	if skill.Metadata.Created != "" {
+		sb.WriteString(fmt.Sprintf("**Created**: %s\n", skill.Metadata.Created))
+	}
+	if skill.Metadata.Updated != "" {
+		sb.WriteString(fmt.Sprintf("**Updated**: %s\n", skill.Metadata.Updated))
+	}
+	if len(skill.Metadata.Tags) > 0 {
+		sb.WriteString(fmt.Sprintf("**Tags**: %s\n", strings.Join(skill.Metadata.Tags, ", ")))
+	}
+	if len(skill.Metadata.Tools) > 0 {
+		sb.WriteString("\n**Required Tools**:\n")
+		for _, tool := range skill.Metadata.Tools {
+			required := "optional"
+			if tool.Required {
+				required = "required"
+			}
+			sb.WriteString(fmt.Sprintf("- %s (%s): %s\n", tool.Name, required, tool.Description))
+		}
+	}
+	
+	sb.WriteString(fmt.Sprintf("\n**Path**: %s\n\n", skill.SkillPath))
+	sb.WriteString("---\n\n")
+	sb.WriteString(skill.Content)
+	
+	return sb.String()
+}
+
+func (h *Harness) createSkill(ctx context.Context, name, description string) string {
+	// Create skill with empty content template
+	content := fmt.Sprintf(`## 描述
+
+%s
+
+## 使用场景
+
+- 场景 1
+- 场景 2
+
+## 工具使用流程
+
+### 步骤 1: 
+
+描述步骤...
+
+### 步骤 2: 
+
+描述步骤...
+
+## 注意事项
+
+1. 注意事项 1
+2. 注意事项 2
+`, description)
+
+	if err := h.skillDiscovery.CreateSkill(name, description, content); err != nil {
+		return fmt.Sprintf("Error creating skill: %v", err)
+	}
+
+	return fmt.Sprintf("Skill '%s' created successfully!\nYou can now use /skill show %s to view it, or /skill edit %s to modify it.", name, name, name)
+}
+
+func (h *Harness) editSkill(ctx context.Context, name, content string) string {
+	if content == "" {
+		// Show current content for editing
+		skill, err := h.skillDiscovery.GetSkillByName(ctx, name)
+		if err != nil {
+			return fmt.Sprintf("Error: %v", err)
+		}
+		return fmt.Sprintf("Current content for skill '%s':\n\n---\n%s\n---\n\nTo edit, use: /skill edit %s <new content>", name, skill.Content, name)
+	}
+
+	// Get existing skill to preserve description
+	skill, err := h.skillDiscovery.GetSkillByName(ctx, name)
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	if err := h.skillDiscovery.UpdateSkill(name, skill.Metadata.Description, content); err != nil {
+		return fmt.Sprintf("Error updating skill: %v", err)
+	}
+
+	return fmt.Sprintf("Skill '%s' updated successfully!", name)
+}
+
+func (h *Harness) deleteSkill(ctx context.Context, name string) string {
+	if err := h.skillDiscovery.DeleteSkill(name); err != nil {
+		return fmt.Sprintf("Error deleting skill: %v", err)
+	}
+
+	return fmt.Sprintf("Skill '%s' deleted successfully!", name)
 }

@@ -140,6 +140,13 @@ func (s *Server) setupRoutes() {
 		// 配置管理
 		api.GET("/config", s.getConfig)
 		api.PUT("/config", s.updateConfig)
+
+		// Skill 管理
+		api.GET("/skills", s.listSkills)
+		api.GET("/skills/:name", s.getSkill)
+		api.POST("/skills", s.createSkill)
+		api.PUT("/skills/:name", s.updateSkill)
+		api.DELETE("/skills/:name", s.deleteSkill)
 	}
 
 	// WebSocket 连接
@@ -857,5 +864,169 @@ func (s *Server) updateConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, Response{
 		Success: true,
 		Data:    map[string]string{"message": "Configuration saved and applied successfully"},
+	})
+}
+
+// SkillInfo API 响应结构
+type SkillInfo struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Path        string   `json:"path"`
+	Version     string   `json:"version,omitempty"`
+	Author      string   `json:"author,omitempty"`
+	Created     string   `json:"created,omitempty"`
+	Updated     string   `json:"updated,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	Content     string   `json:"content,omitempty"`
+}
+
+// listSkills 获取所有 skills
+func (s *Server) listSkills(c *gin.Context) {
+	ctx := c.Request.Context()
+	skills := s.harness.GetSkillDiscovery().ListSkills(ctx)
+
+	skillInfos := make([]SkillInfo, 0, len(skills))
+	for _, skill := range skills {
+		skillInfos = append(skillInfos, SkillInfo{
+			Name:        skill.Name,
+			Description: skill.Description,
+			Path:        skill.Path,
+		})
+	}
+
+	c.JSON(http.StatusOK, Response{
+		Success: true,
+		Data: map[string]interface{}{
+			"skills":      skillInfos,
+			"total_count": len(skillInfos),
+		},
+	})
+}
+
+// getSkill 获取单个 skill 详情
+func (s *Server) getSkill(c *gin.Context) {
+	name := c.Param("name")
+	ctx := c.Request.Context()
+
+	skill, err := s.harness.GetSkillDiscovery().GetSkillByName(ctx, name)
+	if err != nil {
+		c.JSON(http.StatusNotFound, Response{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, Response{
+		Success: true,
+		Data: SkillInfo{
+			Name:        skill.Name,
+			Description: skill.Description,
+			Path:        skill.SkillPath,
+			Version:     skill.Metadata.Version,
+			Author:      skill.Metadata.Author,
+			Created:     skill.Metadata.Created,
+			Updated:     skill.Metadata.Updated,
+			Tags:        skill.Metadata.Tags,
+			Content:     skill.Content,
+		},
+	})
+}
+
+// createSkill 创建新 skill
+func (s *Server) createSkill(c *gin.Context) {
+	var req struct {
+		Name        string `json:"name" binding:"required"`
+		Description string `json:"description" binding:"required"`
+		Content     string `json:"content"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, Response{
+			Success: false,
+			Error:   "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	content := req.Content
+	if content == "" {
+		content = fmt.Sprintf("## 描述\n\n%s\n\n## 使用场景\n\n- 场景 1\n- 场景 2\n\n## 工具使用流程\n\n### 步骤 1:\n\n描述步骤...\n\n## 注意事项\n\n1. 注意事项 1", req.Description)
+	}
+
+	if err := s.harness.GetSkillDiscovery().CreateSkill(req.Name, req.Description, content); err != nil {
+		c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusCreated, Response{
+		Success: true,
+		Data:    map[string]string{"message": fmt.Sprintf("Skill '%s' created successfully", req.Name)},
+	})
+}
+
+// updateSkill 更新 skill
+func (s *Server) updateSkill(c *gin.Context) {
+	name := c.Param("name")
+	var req struct {
+		Description string `json:"description"`
+		Content     string `json:"content" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, Response{
+			Success: false,
+			Error:   "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	// 获取现有 skill 以保留描述
+	skill, err := s.harness.GetSkillDiscovery().GetSkillByName(c.Request.Context(), name)
+	if err != nil {
+		c.JSON(http.StatusNotFound, Response{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	description := req.Description
+	if description == "" {
+		description = skill.Metadata.Description
+	}
+
+	if err := s.harness.GetSkillDiscovery().UpdateSkill(name, description, req.Content); err != nil {
+		c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, Response{
+		Success: true,
+		Data:    map[string]string{"message": fmt.Sprintf("Skill '%s' updated successfully", name)},
+	})
+}
+
+// deleteSkill 删除 skill
+func (s *Server) deleteSkill(c *gin.Context) {
+	name := c.Param("name")
+
+	if err := s.harness.GetSkillDiscovery().DeleteSkill(name); err != nil {
+		c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, Response{
+		Success: true,
+		Data:    map[string]string{"message": fmt.Sprintf("Skill '%s' deleted successfully", name)},
 	})
 }

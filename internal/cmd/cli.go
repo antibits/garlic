@@ -96,6 +96,7 @@ func runCLI(cmd *cobra.Command, args []string) error {
 			"/switch <id>    - Switch to a session",
 			"/delete <id>    - Delete a session",
 			"/current        - Show current session",
+			"/skill          - Skill management (list/show/create/edit/delete)",
 		}))
 
 	// Main loop
@@ -138,7 +139,18 @@ func runCLI(cmd *cobra.Command, args []string) error {
 
 		// Handle session commands
 		if strings.HasPrefix(input, "/") {
-			h.HandleSessionCommand(input)
+			// Check if it's a skill command
+			if strings.HasPrefix(input, "/skill") {
+				skillInput := strings.TrimPrefix(input, "/skill")
+				skillInput = strings.TrimSpace(skillInput)
+				if skillInput == "" {
+					skillInput = "list"
+				}
+				result := h.HandleSkillCommand(skillInput)
+				logger.Info(result)
+			} else {
+				h.HandleSessionCommand(input)
+			}
 			continue
 		}
 
