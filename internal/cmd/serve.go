@@ -96,6 +96,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Create harness
 	harnessCfg := &harness.Config{
 		ToolsDir:             cfg.Tools.ToolsDir,
+		SkillsDir:            cfg.Tools.SkillsDir,
 		PythonPath:           cfg.Tools.PythonPath,
 		ConvCompressDisabled: cfg.ConvCompress.Disabled,
 		ConvCompressRound:    cfg.ConvCompress.Round,

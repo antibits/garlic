@@ -220,6 +220,7 @@ type ExecutionContext struct {
 	MaxExecCount   int         // 最大执行次数限制
 	DefaultMsgType MessageType // Current message type being processed
 	RemainingPlan  string      // step by step remaining plan
+	ActiveSkill    string      // Currently active skill name (if any)
 }
 
 // NewExecutionContext creates a new execution context
@@ -232,6 +233,7 @@ func NewExecutionContext(sessName string, conversation *Conversation, isUserQuer
 		MaxExecCount:   3,               // 默认最多执行 3 次
 		DefaultMsgType: MessageTypeUser, // Default to user triggered
 		RemainingPlan:  remainingPlan,
+		ActiveSkill:    "",              // No active skill by default
 	}
 }
 

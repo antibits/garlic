@@ -97,6 +97,11 @@ garlic/
 ├── tools/                       # Python 工具目录
 │   └── websearch/               # 工具目录（工具名称）
 │       └── main.py              # 网络搜索工具入口点
+├── skills/                      # Skill 目录（工具使用流程手册）
+│   ├── project_status_report/   # 项目进度汇报 skill
+│   │   └── Skill.md             # Skill 描述文件
+│   └── code_review_workflow/    # 代码审查流程 skill
+│       └── Skill.md             # Skill 描述文件
 ├── config.yaml                  # 应用配置
 ├── config.yaml.example          # 配置示例
 ├── go.mod                       # Go 模块定义
@@ -150,6 +155,13 @@ garlic/
 - 注册的 Go 原生工具
 - 来自 `tools/<tool-name>/main.py` 入口点的 Python 脚本
 - 参数通过命令行选项传递：`-key value`
+
+### Skill 发现 (`internal/skill/discovery.go`)
+动态 skill 发现和加载：
+- 扫描 `skills/` 目录获取可用的 skill
+- 读取 `Skill.md` 文件获取 skill 描述和流程
+- 缓存 skill 内容以提高效率
+- skill 是工具使用流程的手册，不是可执行代码
 
 ### 工具发现 (`internal/tool/discovery.go`)
 动态工具发现和描述生成：
@@ -218,6 +230,7 @@ tool_generator:
 tools:
   python_path: python
   tools_dir: tools
+  skills_dir: skills
 ```
 
 ## 工作流管道
@@ -236,6 +249,83 @@ tools:
 - Go 标准格式化（`gofmt`）
 - 带有描述性消息的错误处理
 - 用于可取消操作的 Context 传播
+
+### 添加 Skills
+
+Skills 是工具使用流程的手册，描述如何组合使用多个工具来完成复杂任务。
+
+#### Skill 结构
+
+每个 skill 是一个目录，包含 `Skill.md` 文件：
+
+```
+skills/
+└── <skill-name>/
+    └── Skill.md
+```
+
+#### Skill.md 内容
+
+`Skill.md` 使用 **YAML Front Matter** 格式（参考 Hugo、Jekyll 标准），包含元数据和正文：
+
+**YAML Front Matter**（文件头）：
+```yaml
+---
+name: "Skill 名称"
+description: "Skill 描述"
+version: "1.0.0"
+author: "作者"
+created: "2024-01-15"
+updated: "2024-01-15"
+tags:
+  - 标签1
+  - 标签2
+tools:
+  - name: "工具名"
+    description: "工具描述"
+    required: true
+---
+```
+
+**Markdown 正文**：
+1. **标题和描述**: skill 的名称和用途
+2. **使用场景**: 适用场景列表
+3. **工具使用流程**: 详细的步骤说明，包括使用的工具和参数
+4. **输出模板**: 生成的报告或文档模板（可选）
+5. **注意事项**: 使用时的注意点
+
+#### 示例
+
+```markdown
+# 项目进度汇报
+
+## 描述
+通过查询 Jira 获取项目任务信息，生成项目进度报告。
+
+## 工具使用流程
+
+### 步骤 1: 查询项目任务
+使用 `jira_search` 工具...
+
+### 步骤 2: 获取任务详情
+对每个任务使用 `jira_get_issue` 工具...
+
+### 步骤 3: 汇总分析
+...
+
+### 步骤 4: 生成报告
+使用 `filewriter` 工具写入报告...
+```
+
+#### Skill 工作流程
+
+1. 用户请求使用某个 skill（如"汇报项目进度"）
+2. Router 识别为 `tool` 意图
+3. **ExecutorAgent.SelectTool 同时获取 tools 和 skills 列表**
+4. **系统提示中同时展示 tools 和 skills，AI 根据任务需求选择**
+5. 如果选中 skill：Skill.md 内容作为 system 消息注入对话
+6. AI 按照 Skill.md 描述的流程使用工具
+7. 直到上下文 pop 到上级，skill 才被释放
 
 ### 添加工具
 

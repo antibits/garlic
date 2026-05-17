@@ -10,6 +10,7 @@ import (
 
 	"github.com/antibits/garlic/internal/harness/model"
 	"github.com/antibits/garlic/internal/llm"
+	"github.com/antibits/garlic/internal/skill"
 	"github.com/antibits/garlic/internal/tool"
 
 	"github.com/kaptinlin/jsonrepair"
@@ -222,25 +223,30 @@ Current Time: {{.current_time}}
 
 // ExecutorResult represents the result of executor agent's tool selection
 type ExecutorResult struct {
-	ToolName string                 `json:"tool"`
-	ToolArgs map[string]interface{} `json:"args"`
+	ToolName    string                 `json:"tool"`
+	ToolArgs    map[string]interface{} `json:"args"`
+	IsSkill     bool                   `json:"is_skill"`      // true if selected item is a skill
+	SkillPath   string                 `json:"skill_path"`    // Full path to skill directory
+	SkillContent string                `json:"skill_content"` // Full Skill.md content (without front matter)
 }
 
 // ExecutorAgent handles tool selection based on tasks
 type ExecutorAgent struct {
-	client        *llm.Client
-	systemPrompt  string
-	toolDiscovery *tool.ToolDiscovery
-	platform      string
+	client         *llm.Client
+	systemPrompt   string
+	toolDiscovery  *tool.ToolDiscovery
+	skillDiscovery *skill.Discovery
+	platform       string
 }
 
 // NewExecutorAgent creates a new executor agent
-func NewExecutorAgent(client *llm.Client, systemPrompt string, toolsDir, pythonPath string) *ExecutorAgent {
+func NewExecutorAgent(client *llm.Client, systemPrompt string, toolsDir, skillsDir, pythonPath string) *ExecutorAgent {
 	return &ExecutorAgent{
-		client:        client,
-		systemPrompt:  systemPrompt,
-		toolDiscovery: tool.NewToolDiscovery(toolsDir, pythonPath),
-		platform:      getPlatformName(),
+		client:         client,
+		systemPrompt:   systemPrompt,
+		toolDiscovery:  tool.NewToolDiscovery(toolsDir, pythonPath),
+		skillDiscovery: skill.NewDiscovery(skillsDir),
+		platform:       getPlatformName(),
 	}
 }
 
@@ -282,15 +288,36 @@ func (e *ExecutorAgent) getAvailableTools(ctx context.Context, neededToolDescrip
 	return tools
 }
 
+// getAvailableSkills dynamically fetches the current list of available skills
+// Uses SkillDiscovery's built-in caching to avoid repeated scans
+func (e *ExecutorAgent) getAvailableSkills(ctx context.Context, neededSkillDescription string) []skill.SkillInfo {
+	skills, err := e.skillDiscovery.GetSkills(ctx)
+	if err != nil {
+		// Fallback to empty list if discovery fails
+		return []skill.SkillInfo{}
+	}
+
+	// Filter skills based on needed description if provided
+	if neededSkillDescription == "" {
+		return skills
+	}
+
+	// TODO: implement semantic filtering based on description similarity
+	// For now, return all skills
+	return skills
+}
+
 // SelectTool determines which tool to use for a given task
 // Streams the tool selection process (including JSON) to the frontend
 func (e *ExecutorAgent) SelectTool(ctx context.Context, messages []model.Message, toolDescription string, languageInstr string, onChunk ...llm.StreamChunkCallback) (*ExecutorResult, *llm.Usage, error) {
 	availableTools := e.getAvailableTools(ctx, toolDescription)
-	if len(availableTools) == 0 {
-		return nil, nil, fmt.Errorf("no available tool for : %s", toolDescription)
+	availableSkills := e.getAvailableSkills(ctx, toolDescription)
+
+	if len(availableTools) == 0 && len(availableSkills) == 0 {
+		return nil, nil, fmt.Errorf("no available tool or skill for : %s", toolDescription)
 	}
 
-	systemPrompt := e.buildSystemPrompt(availableTools, languageInstr)
+	systemPrompt := e.buildSystemPrompt(availableTools, availableSkills, languageInstr)
 
 	// Convert messages to OpenAI format
 	chatMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages)+1)
@@ -307,29 +334,62 @@ func (e *ExecutorAgent) SelectTool(ctx context.Context, messages []model.Message
 	}
 
 	result, parseErr := e.parseResponse(content)
+	if parseErr != nil {
+		return result, usage, parseErr
+	}
+
+	// If result is a skill, enrich it with full skill content
+	if result.IsSkill && result.ToolName != "" {
+		for _, sk := range availableSkills {
+			if sk.Name == result.ToolName {
+				result.SkillPath = sk.SkillPath
+				result.SkillContent = sk.Content
+				break
+			}
+		}
+	}
+
 	return result, usage, parseErr
 }
 
-func (e *ExecutorAgent) buildSystemPrompt(availableTools []tool.ToolInfo, languageInstr string) string {
+func (e *ExecutorAgent) buildSystemPrompt(availableTools []tool.ToolInfo, availableSkills []skill.SkillInfo, languageInstr string) string {
 	systemPrompt := e.systemPrompt
 	if systemPrompt == "" {
-		systemPrompt = `You are an execution assistant. According to the conversation, determine what tool is needed next. Use the available tools to complete the task.
+		systemPrompt = `You are an execution assistant. According to the conversation, determine what tool or skill is needed next. Use the available tools and skills to complete the task.
 
 ## Platform Information
 You are running on {{.platform}} platform. When executing commands via cmdexec tool, ensure commands are compatible with this platform.
 
-## Avaliable Tools
+## Available Tools
 {{.tools}}
 
-## Tool Calling Rules
-**IMPORTANT**: You can ONLY call tools from the given "Available Tools" list.
+## Available Skills
+{{.skills}}
+
+## Tool/Skill Calling Rules
+**IMPORTANT**: You can ONLY call tools or skills from the given "Available Tools" and "Available Skills" lists.
+
+**Difference between Tools and Skills:**
+- **Tools**: Single-function utilities (e.g., webrowser, filewriter, cmdexec). Use these for atomic operations.
+- **Skills**: Multi-step workflow manuals that describe how to combine multiple tools to complete complex tasks. When you select a skill, its full workflow description will be injected into the conversation context, and you will follow the step-by-step instructions.
+
+**When to use a Skill vs a Tool:**
+- If the task requires a complex, multi-step process with specific tool combinations, select the appropriate **skill**.
+- If the task requires a single operation, select the appropriate **tool**.
+
+**Output Format:**
+- For tools: ` + "`" + `{"tool": "tool_name", "args": {"key": "value"}}` + "`" + `
+- For skills: ` + "`" + `{"tool": "skill_name", "args": {}, "is_skill": true}` + "`" + `
 
 Examples:
 	user: Search for information about machine learning
-	assistant: {"tool": "websearch", "args": {"query": "machine learning"}}
+	assistant: ` + "`" + `{"tool": "webrowser", "args": {"mode": "search", "query": "machine learning"}}` + "`" + `
+
+	user: Report the progress of project XYZ
+	assistant: ` + "`" + `{"tool": "project_status_report", "args": {}, "is_skill": true}` + "`" + `
 
 	user: The laptop is out of battery and needs to be plugged into a power supply
-	assistant: {"tool": ""}
+	assistant: ` + "`" + `{"tool": ""}` + "`" + `
 
 Current Time: {{.current_time}}
 
@@ -345,9 +405,27 @@ Current Time: {{.current_time}}
 			fmt.Sprintf("|%s|%s|\n", strings.ReplaceAll(strings.ReplaceAll(tool.Name, "|", ","), "\n", "\t"), strings.ReplaceAll(strings.ReplaceAll(tool.Description, "|", ","), "\n", "\t")))
 	}
 
+	var skills strings.Builder
+	skills.WriteString(`|name|description|version|tags|
+|:-|:-|:-|:-|
+`)
+	for _, sk := range availableSkills {
+		tags := ""
+		if len(sk.Metadata.Tags) > 0 {
+			tags = strings.Join(sk.Metadata.Tags, ", ")
+		}
+		skills.WriteString(
+			fmt.Sprintf("|%s|%s|%s|%s|\n",
+				strings.ReplaceAll(strings.ReplaceAll(sk.Name, "|", ","), "\n", "\t"),
+				strings.ReplaceAll(strings.ReplaceAll(sk.Description, "|", ","), "\n", "\t"),
+				sk.Metadata.Version,
+				strings.ReplaceAll(strings.ReplaceAll(tags, "|", ","), "\n", "\t")))
+	}
+
 	// Build template data
 	data := map[string]interface{}{
 		"tools":        tools,
+		"skills":       skills,
 		"platform":     e.platform,
 		"current_time": time.Now().Format("2006-01-02 15:04:05 MST"),
 	}

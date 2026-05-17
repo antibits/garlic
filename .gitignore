@@ -18,5 +18,5 @@ garlic*.exe
 web/dist/
 web/dist/**/*
 main.exe
-tools/websearch/chrome*/**/*
+tools/webrowser/chrome*/**/*
 config.yaml

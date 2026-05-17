@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """
-Web Search Tool using Baidu Search
+Web Browser Tool - Search and Web Browsing
 
-This tool:
-1. Searches the web using Baidu web search
-2. Ranks search results using Lexrank algorithm based on title relevance
-3. Crawls the actual content from top-ranked search result pages using Selenium
-4. Extracts relevant snippets using TextRank algorithm
-5. Returns the most relevant content snippets matching the search query
+This tool supports two modes:
+1. Search mode: Searches the web using Baidu, ranks results, crawls pages, and extracts content
+2. Browse mode: Directly browses a specified URL and extracts its content
 
 Features:
 - Full JavaScript support via Selenium WebDriver
@@ -209,15 +206,22 @@ def get_chrome_driver(headless: bool = True, use_profile: bool = True) -> webdri
     }
     chrome_options.add_experimental_option("prefs", prefs)
 
-    chrome_options.binary_location = os.path.join(script_dir, "chrome-win64", "chrome-websearch.exe")
+    chrome_options.binary_location = os.path.join(script_dir, "chrome-win64", "chrome-webrowser.exe")
     chromedriver_path = os.path.join(script_dir, "chromedriver-win64", "chromedriver.exe")
 
     try:
-        service = Service(chromedriver_path)
-        _global_driver = webdriver.Chrome(service=service, options=chrome_options)
+        # 优先使用指定的 ChromeDriver
+        if os.path.exists(chromedriver_path):
+            service = Service(chromedriver_path)
+            _global_driver = webdriver.Chrome(service=service, options=chrome_options)
+        else:
+            # 如果 ChromeDriver 不存在，使用 Selenium Manager 自动管理
+            print(f"  ChromeDriver not found at {chromedriver_path}, using Selenium Manager", file=sys.stderr)
+            _global_driver = webdriver.Chrome(options=chrome_options)
     except Exception as e:
-        print(f"  Warning: Service initialization failed, using fallback: {e}", file=sys.stderr)
-        _global_driver = webdriver.Chrome(executable_path=chromedriver_path, options=chrome_options)
+        print(f"  Error: Failed to initialize Chrome WebDriver: {e}", file=sys.stderr)
+        print(f"  Hint: Make sure Chrome and ChromeDriver are properly installed", file=sys.stderr)
+        raise
 
     _add_stealth_options(_global_driver)
 
@@ -274,8 +278,8 @@ def close_chrome_driver():
     if os.name == 'nt':
         try:
             import subprocess
-            # 强制结束所有 chrome-websearch.exe 和 chromedriver.exe 进程
-            subprocess.run(['taskkill', '/F', '/IM', 'chrome-websearch.exe'], 
+            # 强制结束所有 chrome-webrowser.exe 和 chromedriver.exe 进程
+            subprocess.run(['taskkill', '/F', '/IM', 'chrome-webrowser.exe'],
                           capture_output=True, timeout=5)
             subprocess.run(['taskkill', '/F', '/IM', 'chromedriver.exe'], 
                           capture_output=True, timeout=5)
@@ -889,6 +893,41 @@ class TextRank:
 
 
 # ============================================================================
+# Browse URL Function - Direct Web Page Browsing
+# ============================================================================
+
+def browse_url(url: str, timeout: int = 30) -> dict:
+    """
+    Browse a URL and extract its main content.
+
+    Args:
+        url: The URL to browse
+        timeout: Page load timeout in seconds
+
+    Returns:
+        Dictionary with page title and content
+    """
+    print(f"Browsing: {url}", file=sys.stderr)
+
+    title, content = fetch_page_content(url, timeout=timeout)
+
+    if title and content:
+        return {
+            "success": True,
+            "url": url,
+            "title": title,
+            "content": content,
+            "content_length": len(content)
+        }
+    else:
+        return {
+            "success": False,
+            "url": url,
+            "message": "Failed to extract content from the page"
+        }
+
+
+# ============================================================================
 # Main Tool Function
 # ============================================================================
 
@@ -1001,23 +1040,62 @@ def websearch(query: str, num_results: int = 5, crawl_top_n: int = 3, snippets_p
 
 
 def main():
-    """Main entry point for the websearch tool."""
+    """Main entry point for the webrowser tool."""
     # Set UTF-8 encoding for stdout
     sys.stdout.reconfigure(encoding='utf-8') if hasattr(sys.stdout, 'reconfigure') else None
-    
+
     parser = argparse.ArgumentParser(
-        description='Web Search Tool with Selenium-based Content Crawling',
+        description='Web Browser Tool - Search and Web Browsing',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
-  python main.py -query "Python programming"
+  # Search mode
+  python main.py -mode search -query "Python programming"
+  
+  # Browse mode
+  python main.py -mode browse -url "https://example.com/article"
         """
     )
 
     parser.add_argument(
+        '-mode',
+        type=str,
+        choices=['search', 'browse'],
+        default='search',
+        help='Operation mode: search (default) or browse'
+    )
+    parser.add_argument(
         '-query',
         type=str,
-        required=True,
-        help='Search query string. 使用重点关键词搜索能提升搜索效果。'
+        help='Search query string (required for search mode). 使用重点关键词搜索能提升搜索效果。'
+    )
+    parser.add_argument(
+        '-url',
+        type=str,
+        help='URL to browse (required for browse mode)'
+    )
+    parser.add_argument(
+        '-num',
+        type=int,
+        default=10,
+        help='Number of search results to fetch (default: 10, search mode only)'
+    )
+    parser.add_argument(
+        '-crawl_top_n',
+        type=int,
+        default=6,
+        help='Number of top results to crawl (default: 6, search mode only)'
+    )
+    parser.add_argument(
+        '-snippets_per_page',
+        type=int,
+        default=20,
+        help='Number of snippets per page (default: 20, search mode only)'
+    )
+    parser.add_argument(
+        '-timeout',
+        type=int,
+        default=30,
+        help='Page load timeout in seconds (default: 30, browse mode only)'
     )
     parser.add_argument(
         '-debug',
@@ -1028,14 +1106,39 @@ def main():
     args = parser.parse_args()
 
     try:
-        result = websearch(
-            query=args.query,
-            num_results=10,
-            crawl_top_n=6,
-            snippets_per_page=20
-        )
-        print("## Websearch Result:\n\n", file=sys.stdout)
-        print("\n".join(["\n".join([snip for snip in "".join(page.get("content_snippets")).split("\n") if len(snip)>20]) for page in result.get("crawled_content", [])]) + "\n\n---\n", file=sys.stdout)
+        if args.mode == 'search':
+            if not args.query:
+                print("Error: -query is required for search mode", file=sys.stderr)
+                sys.exit(1)
+            
+            result = websearch(
+                query=args.query,
+                num_results=args.num,
+                crawl_top_n=args.crawl_top_n,
+                snippets_per_page=args.snippets_per_page
+            )
+            print("## Websearch Result:\n\n", file=sys.stdout)
+            print("\n".join(["\n".join([snip for snip in "".join(page.get("content_snippets")).split("\n") if len(snip)>20]) for page in result.get("crawled_content", [])]) + "\n\n---\n", file=sys.stdout)
+        
+        elif args.mode == 'browse':
+            if not args.url:
+                print("Error: -url is required for browse mode", file=sys.stderr)
+                sys.exit(1)
+            
+            result = browse_url(
+                url=args.url,
+                timeout=args.timeout
+            )
+            print("## Web Browsing Result:\n\n", file=sys.stdout)
+            if result.get('success'):
+                print(f"Title: {result.get('title', 'Unknown')}\n", file=sys.stdout)
+                print(f"URL: {result.get('url', '')}\n", file=sys.stdout)
+                print(f"Content Length: {result.get('content_length', 0)} characters\n", file=sys.stdout)
+                print("---\n", file=sys.stdout)
+                print(result.get('content', ''), file=sys.stdout)
+            else:
+                print(f"Error: {result.get('message', 'Unknown error')}", file=sys.stdout)
+    
     except Exception as e:
         if args.debug:
             import traceback

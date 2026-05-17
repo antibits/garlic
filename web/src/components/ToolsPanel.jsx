@@ -11,7 +11,7 @@ const ToolsPanel = () => {
     // TODO: 从后端获取工具列表
     // 暂时使用模拟数据
     const mockTools = [
-      { id: 'websearch', name: t('tools.webSearch'), description: t('tools.webSearchDesc'), enabled: true },
+      { id: 'webrowser', name: t('tools.webrowser'), description: t('tools.webrowserDesc'), enabled: true },
       { id: 'fileviewer', name: t('tools.fileViewer'), description: t('tools.fileViewerDesc'), enabled: true },
       { id: 'codegen', name: t('tools.codeGen'), description: t('tools.codeGenDesc'), enabled: true }
     ]

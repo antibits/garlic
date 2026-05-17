@@ -15,8 +15,8 @@ func TestPreProcessQuotes(t *testing.T) {
 	}{
 		{
 			name:     "normal JSON unchanged",
-			input:    `{"tool": "websearch", "args": {"query": "ML"}}`,
-			expected: `{"tool": "websearch", "args": {"query": "ML"}}`,
+			input:    `{"tool": "webrowser", "args": {"query": "ML"}}`,
+			expected: `{"tool": "webrowser", "args": {"query": "ML"}}`,
 		},
 		{
 			name:     "extra quotes in values",
@@ -79,47 +79,47 @@ func TestFixJSON(t *testing.T) {
 		},
 		{
 			name:      "valid JSON unchanged",
-			input:     `{"tool": "websearch", "args": {"query": "machine learning"}}`,
+			input:     `{"tool": "webrowser", "args": {"query": "machine learning"}}`,
 			wantValid: true,
 		},
 		{
 			name:      "missing quotes on keys",
-			input:     `{tool: "websearch", args: {query: "machine learning"}}`,
+			input:     `{tool: "webrowser", args: {query: "machine learning"}}`,
 			wantValid: true,
 		},
 		{
 			name:      "missing quotes on values",
-			input:     `{"tool": websearch, "args": {"query": machine learning}}`,
+			input:     `{"tool": webrowser, "args": {"query": machine learning}}`,
 			wantValid: true,
 		},
 		{
 			name:      "missing quotes on both keys and values",
-			input:     `{tool: websearch, args: {query: machine learning}}`,
+			input:     `{tool: webrowser, args: {query: machine learning}}`,
 			wantValid: true,
 		},
 		{
 			name:      "extra whitespace",
-			input:     `{ tool :  websearch ,  args :  { query :  machine learning  }  }`,
+			input:     `{ tool :  webrowser ,  args :  { query :  machine learning  }  }`,
 			wantValid: true,
 		},
 		{
 			name:      "nested object with missing quotes",
-			input:     `{tool: websearch, args: {query: ML, num: 10}}`,
+			input:     `{tool: webrowser, args: {query: ML, num: 10}}`,
 			wantValid: true,
 		},
 		{
 			name:      "single quotes",
-			input:     `{'tool': 'websearch', 'args': {'query': 'ML'}}`,
+			input:     `{'tool': 'webrowser', 'args': {'query': 'ML'}}`,
 			wantValid: true,
 		},
 		{
 			name:      "mixed issues",
-			input:     `{tool:websearch,args:{query:'ML test'}}`,
+			input:     `{tool:webrowser,args:{query:'ML test'}}`,
 			wantValid: true,
 		},
 		{
 			name:      "curly quotes in value",
-			input:     `{"tool": "websearch", "args": {"query": "machine learning"}}`,
+			input:     `{"tool": "webrowser", "args": {"query": "machine learning"}}`,
 			wantValid: true,
 		},
 		{

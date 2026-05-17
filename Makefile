@@ -8,7 +8,7 @@ PYTHON = python
 
 # Chrome 和 ChromeDriver 下载配置
 CHROME_VERSION = 146.0.7645.0
-WEBSEARCH_TOOLS_DIR = tools/websearch
+WEBEROER_TOOLS_DIR = tools/webrowser
 
 # 平台检测
 ifeq ($(OS),Windows_NT)
@@ -54,28 +54,28 @@ setup: download-chrome download-chromedriver build
 
 .PHONY: download-chrome
 download-chrome:
-	@if [ -d "$(WEBSEARCH_TOOLS_DIR)/chrome-$(PLATFORM)" ]; then \
+	@if [ -d "$(WEBEROER_TOOLS_DIR)/chrome-$(PLATFORM)" ]; then \
 		echo "Chrome 已存在，跳过下载"; \
 	else \
-		mkdir -p "$(WEBSEARCH_TOOLS_DIR)/chrome-$(PLATFORM)"; \
+		mkdir -p "$(WEBEROER_TOOLS_DIR)/chrome-$(PLATFORM)"; \
 		echo "正在下载 Chrome..."; \
 		$(CURL_CMD) "$(CHROME_URL)" -o "chrome-$(PLATFORM).zip"; \
 		echo "正在解压 Chrome..."; \
-		$(UNZIP_CMD) "chrome-$(PLATFORM).zip" -d "$(WEBSEARCH_TOOLS_DIR)"; \
+		$(UNZIP_CMD) "chrome-$(PLATFORM).zip" -d "$(WEBEROER_TOOLS_DIR)"; \
 		rm -f "chrome-$(PLATFORM).zip"; \
 		echo "Chrome 下载完成"; \
 	fi
 
 .PHONY: download-chromedriver
 download-chromedriver:
-	@if [ -d "$(WEBSEARCH_TOOLS_DIR)/chromedriver-$(PLATFORM)" ]; then \
+	@if [ -d "$(WEBEROER_TOOLS_DIR)/chromedriver-$(PLATFORM)" ]; then \
 		echo "ChromeDriver 已存在，跳过下载"; \
 	else \
-		mkdir -p "$(WEBSEARCH_TOOLS_DIR)/chromedriver-$(PLATFORM)"; \
+		mkdir -p "$(WEBEROER_TOOLS_DIR)/chromedriver-$(PLATFORM)"; \
 		echo "正在下载 ChromeDriver..."; \
 		$(CURL_CMD) "$(CHROMEDRIVER_URL)" -o "chromedriver-$(PLATFORM).zip"; \
 		echo "正在解压 ChromeDriver..."; \
-		$(UNZIP_CMD) "chromedriver-$(PLATFORM).zip" -d "$(WEBSEARCH_TOOLS_DIR)"; \
+		$(UNZIP_CMD) "chromedriver-$(PLATFORM).zip" -d "$(WEBEROER_TOOLS_DIR)"; \
 		rm -f "chromedriver-$(PLATFORM).zip"; \
 		echo "ChromeDriver 下载完成"; \
 	fi

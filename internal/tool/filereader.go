@@ -17,7 +17,7 @@ func (t *FileReaderTool) Name() string {
 
 // Description returns the tool description
 func (t *FileReaderTool) Description() string {
-	return "读取文件内容，支持获取文件总行数和按行范围读取文件。参数：path (文件路径，必需), action (操作类型：count 统计行数/read 读取内容，可选默认 read), start (起始行号从 1 开始，可选默认 1), end (结束行号，可选), limit (读取行数，与 end 二选一，可选)"
+	return "读取文件内容，支持获取文件总行数和按行范围读取文件。返回内容时每行格式为 '行号:内容'，行号从 1 开始。参数：path (文件路径，必需), action (操作类型：count 统计行数/read 读取内容，可选默认 read), start (起始行号从 1 开始，可选默认 1), end (结束行号，可选), limit (读取行数，与 end 二选一，可选)"
 }
 
 // Execute 执行文件读取操作
@@ -125,7 +125,9 @@ func (t *FileReaderTool) readLines(file *os.File, args map[string]interface{}) (
 		if endLine != -1 && currentLine > endLine {
 			break
 		}
-		lines = append(lines, scanner.Text())
+		// 每行格式为 "行号:内容"
+		lineWithNumber := fmt.Sprintf("%d:%s", currentLine, scanner.Text())
+		lines = append(lines, lineWithNumber)
 	}
 
 	if err := scanner.Err(); err != nil {

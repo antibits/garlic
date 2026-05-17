@@ -25,7 +25,7 @@ var ErrToolNotFound = errors.New("tool not found")
 var (
 	norace_tool_locks = func() map[string]*sync.Mutex {
 		locks := make(map[string]*sync.Mutex)
-		locks["websearch"] = &sync.Mutex{}
+		locks["webrowser"] = &sync.Mutex{}
 		return locks
 	}()
 )
@@ -149,7 +149,7 @@ func (e *Executor) executePythonTool(ctx context.Context, toolName string, args 
 		}
 	}
 
-	// 当前只有内置的websearch存在并发安全问题，不允许并发执行。
+	// 当前只有内置的webrowser存在并发安全问题，不允许并发执行。
 	if raceLock, ok := norace_tool_locks[toolName]; ok {
 		raceLock.Lock()
 		defer raceLock.Unlock()

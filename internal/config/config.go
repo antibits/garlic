@@ -50,6 +50,7 @@ type Config struct {
 	Tools  struct {
 		PythonPath string `yaml:"python_path"`
 		ToolsDir   string `yaml:"tools_dir"`
+		SkillsDir  string `yaml:"skills_dir"`
 	} `yaml:"tools"`
 	ToolGenerator ToolGeneratorConfig        `yaml:"tool_generator,omitempty"`
 	ConvCompress  ConversationCompressConfig `yaml:"conversation_compress"`
@@ -73,6 +74,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Tools.ToolsDir == "" {
 		cfg.Tools.ToolsDir = "tools"
+	}
+	if cfg.Tools.SkillsDir == "" {
+		cfg.Tools.SkillsDir = "skills"
 	}
 	if cfg.ConvCompress.Round <= 0 {
 		cfg.ConvCompress.Round = 20

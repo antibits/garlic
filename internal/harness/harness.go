@@ -11,6 +11,7 @@ import (
 	"github.com/antibits/garlic/internal/harness/session"
 	"github.com/antibits/garlic/internal/llm"
 	"github.com/antibits/garlic/internal/logger"
+	"github.com/antibits/garlic/internal/skill"
 	"github.com/antibits/garlic/internal/tool"
 
 	"go.uber.org/zap"
@@ -29,6 +30,7 @@ type Harness struct {
 	organizer      *agents.OrganizeAgent
 	executorAgent  *agents.ExecutorAgent
 	executor       *tool.Executor
+	skillDiscovery *skill.Discovery
 	ctx            context.Context
 	cancel         context.CancelFunc
 }
@@ -36,6 +38,7 @@ type Harness struct {
 // Config holds harness configuration
 type Config struct {
 	ToolsDir             string
+	SkillsDir            string
 	PythonPath           string
 	Debug                bool
 	ConvCompressDisabled bool
@@ -63,6 +66,9 @@ func NewHarness(cfg *Config, clients AgentClients) *Harness {
 		logger.Warn("Failed to initialize sessions", zap.Error(err))
 	}
 
+	// Create skill discovery
+	skillDiscovery := skill.NewDiscovery(cfg.SkillsDir)
+
 	// Create workflow pipeline
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -75,6 +81,7 @@ func NewHarness(cfg *Config, clients AgentClients) *Harness {
 		organizer:      clients.Organizer,
 		executorAgent:  clients.Executor,
 		executor:       executor,
+		skillDiscovery: skillDiscovery,
 		ctx:            ctx,
 		cancel:         cancel,
 	}
@@ -323,14 +330,28 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 				if err != nil {
 					return "", fmt.Errorf("[%s] select tool failed: %s\n", currExecCtx.SessionName, err.Error())
 				} else if len(execResult.ToolName) > 0 {
-					// Execute tool with streaming output for better UX
-					toolResult, err = h.executor.ExecuteWithStream(ctx, execResult.ToolName, execResult.ToolArgs, _sendChunk)
-					if err != nil && toolResult != nil && toolResult.Error == "" {
-						toolResult.Error = err.Error()
-					}
-					// Add token usage from tool execution
-					if toolResult != nil && toolResult.Usage != nil {
-						session.AddTokenUsage(toolResult.Usage.PromptTokens, toolResult.Usage.CompletionTokens, toolResult.Usage.TotalTokens)
+					// Check if selected item is a skill
+					if execResult.IsSkill {
+						// Build skill message from the result
+						skillMsg := fmt.Sprintf("=== Skill: %s ===\n\n%s\n=== End of Skill ===", execResult.ToolName, execResult.SkillContent)
+
+						// Add skill as a hidden system message
+						currExecCtx.AddMessage("system", skillMsg, model.MessageTypeHidden)
+						currExecCtx.ActiveSkill = execResult.ToolName
+						logger.Info("Skill activated", zap.String("skill", execResult.ToolName), zap.String("path", execResult.SkillPath))
+						// Continue the loop without executing a tool
+						request, requestMsgType = "Continue with the skill activated.", model.MessageTypeHidden
+						continue
+					} else {
+						// Execute tool with streaming output for better UX
+						toolResult, err = h.executor.ExecuteWithStream(ctx, execResult.ToolName, execResult.ToolArgs, _sendChunk)
+						if err != nil && toolResult != nil && toolResult.Error == "" {
+							toolResult.Error = err.Error()
+						}
+						// Add token usage from tool execution
+						if toolResult != nil && toolResult.Usage != nil {
+							session.AddTokenUsage(toolResult.Usage.PromptTokens, toolResult.Usage.CompletionTokens, toolResult.Usage.TotalTokens)
+						}
 					}
 				} else {
 					execError = fmt.Sprintf("I can't find a avalibale tool descript by %q .", routeResult.ToolDescription)
