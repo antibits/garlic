@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getSkills, getSkill, createSkill, updateSkill, deleteSkill } from '../services/api'
+import { getSkills, getSkill, createSkill, updateSkill, deleteSkill, enableSkill, disableSkill } from '../services/api'
 import './SkillManager.css'
 
 const SkillManager = ({ onBack }) => {
@@ -122,6 +122,29 @@ const SkillManager = ({ onBack }) => {
     }
   }
 
+  // 启用/禁用 skill
+  const handleToggleSkill = async (skill) => {
+    try {
+      setLoading(true)
+      setError('')
+      const action = skill.enabled ? disableSkill : enableSkill
+      const response = await action(skill.name)
+      if (response.success) {
+        const actionText = skill.enabled ? 'disabled' : 'enabled'
+        setSuccess(`${skill.name} ${actionText} successfully`)
+        await loadSkills()
+        // 如果当前查看的是这个 skill，更新详情
+        if (selectedSkill?.name === skill.name) {
+          setSelectedSkill({ ...selectedSkill, enabled: !skill.enabled })
+        }
+      }
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || 'Failed to toggle skill')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   // 打开编辑表单
   const openEditForm = (skill) => {
     setEditForm({
@@ -187,6 +210,14 @@ const SkillManager = ({ onBack }) => {
                 >
                   <h3>{skill.name}</h3>
                   <p className="skill-description">{skill.description}</p>
+                  <div className="skill-status">
+                    <span className={`status-indicator ${skill.enabled ? 'enabled' : 'disabled'}`}>
+                      {skill.enabled ? '●' : '○'}
+                    </span>
+                    <span className="status-text">
+                      {skill.enabled ? t('skill.enabled', 'Enabled') : t('skill.disabled', 'Disabled')}
+                    </span>
+                  </div>
                   <div className="skill-actions">
                     <button
                       className="btn btn-primary"
@@ -210,6 +241,13 @@ const SkillManager = ({ onBack }) => {
             <div className="detail-header">
               <h2>{selectedSkill.name}</h2>
               <div className="detail-actions">
+                <button
+                  className={`btn ${selectedSkill.enabled ? 'btn-disable' : 'btn-enable'}`}
+                  onClick={() => handleToggleSkill(selectedSkill)}
+                >
+                  {selectedSkill.enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                  {selectedSkill.enabled ? t('skill.disable', 'Disable') : t('skill.enable', 'Enable')}
+                </button>
                 <button
                   className="btn btn-secondary"
                   onClick={() => openEditForm(selectedSkill)}

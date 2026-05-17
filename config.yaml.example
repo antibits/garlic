@@ -192,6 +192,11 @@ tools:
 disabled_tools:
   # - webrowser  # 示例：禁用 webrowser 工具
 
+# 禁用的 skill 名称列表
+# 在此列出的 skill 将不会被加载和显示
+disabled_skills:
+  # - project_status_report  # 示例：禁用 project_status_report skill
+
 # Tool Generator - Optional configuration for generating new tools
 # When enabled, the agent can create new Python tools from descriptions
 tool_generator:

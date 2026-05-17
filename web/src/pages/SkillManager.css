@@ -159,6 +159,30 @@
   line-height: 1.5;
 }
 
+.skill-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.status-indicator {
+  font-size: 12px;
+}
+
+.status-indicator.enabled {
+  color: #4CAF50;
+}
+
+.status-indicator.disabled {
+  color: #999;
+}
+
+.status-text {
+  font-size: 12px;
+  color: #666;
+}
+
 .skill-actions {
   display: flex;
   gap: 10px;
@@ -181,6 +205,24 @@
 
 .btn-primary:hover {
   background: #1976D2;
+}
+
+.btn-enable {
+  background: #4CAF50;
+  color: white;
+}
+
+.btn-enable:hover {
+  background: #45a049;
+}
+
+.btn-disable {
+  background: #f44336;
+  color: white;
+}
+
+.btn-disable:hover {
+  background: #d32f2f;
 }
 
 .btn-secondary {

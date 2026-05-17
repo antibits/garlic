@@ -55,6 +55,7 @@ type Config struct {
 	ToolGenerator ToolGeneratorConfig `yaml:"tool_generator,omitempty"`
 	ConvCompress  ConversationCompressConfig `yaml:"conversation_compress"`
 	DisabledTools []string `yaml:"disabled_tools,omitempty"`
+	DisabledSkills []string `yaml:"disabled_skills,omitempty"`
 }
 
 // Load reads and parses the configuration file

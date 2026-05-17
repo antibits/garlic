@@ -74,8 +74,10 @@ func runCLI(cmd *cobra.Command, args []string) error {
 	// Create harness
 	harnessCfg := &harness.Config{
 		ToolsDir:             cfg.Tools.ToolsDir,
+		SkillsDir:            cfg.Tools.SkillsDir,
 		PythonPath:           cfg.Tools.PythonPath,
 		DisabledTools:        cfg.DisabledTools,
+		DisabledSkills:       cfg.DisabledSkills,
 		ConvCompressDisabled: cfg.ConvCompress.Disabled,
 		ConvCompressRound:    cfg.ConvCompress.Round,
 		ConvCompressLength:   cfg.ConvCompress.Length,

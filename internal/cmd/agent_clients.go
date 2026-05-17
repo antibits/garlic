@@ -39,7 +39,7 @@ func createAgentClients(cfg *config.Config) (harness.AgentClients, error) {
 	if executorCfg, ok := cfg.GetAgent("executor"); ok {
 		if modelCfg, ok := cfg.GetModel(executorCfg.Model); ok {
 			// ExecutorAgent will dynamically fetch available tools and skills when needed
-			clients.Executor = agents.NewExecutorAgent(llm.NewClient(modelCfg), executorCfg.SystemPrompt, cfg.Tools.ToolsDir, cfg.Tools.SkillsDir, cfg.Tools.PythonPath, cfg.DisabledTools)
+			clients.Executor = agents.NewExecutorAgent(llm.NewClient(modelCfg), executorCfg.SystemPrompt, cfg.Tools.ToolsDir, cfg.Tools.SkillsDir, cfg.Tools.PythonPath, cfg.DisabledTools, cfg.DisabledSkills)
 		} else {
 			return clients, fmt.Errorf("model '%s' not found for executor", executorCfg.Model)
 		}

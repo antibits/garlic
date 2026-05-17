@@ -42,6 +42,7 @@ type Config struct {
 	PythonPath           string
 	Debug                bool
 	DisabledTools        []string
+	DisabledSkills       []string
 	ConvCompressDisabled bool
 	ConvCompressRound    int
 	ConvCompressLength   int
@@ -68,7 +69,7 @@ func NewHarness(cfg *Config, clients AgentClients) *Harness {
 	}
 
 	// Create skill discovery
-	skillDiscovery := skill.NewDiscovery(cfg.SkillsDir)
+	skillDiscovery := skill.NewDiscovery(cfg.SkillsDir, cfg.DisabledSkills)
 
 	// Create workflow pipeline
 	ctx, cancel := context.WithCancel(context.Background())

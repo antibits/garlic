@@ -39,6 +39,7 @@ type ToolRef struct {
 type SkillInfo struct {
 	Name        string        `json:"name"`
 	Description string        `json:"description"`
+	Enabled     bool          `json:"enabled"`
 	SkillPath   string        `json:"skill_path"`
 	Content     string        `json:"content"`  // Full Skill.md content (without front matter)
 	Metadata    SkillMetadata `json:"metadata"` // Parsed YAML Front Matter
@@ -46,21 +47,40 @@ type SkillInfo struct {
 
 // Discovery handles discovering and caching skill descriptions
 type Discovery struct {
-	skillsDir     string
-	cache         map[string]SkillInfo
-	cacheHash     string
-	lastCheck     time.Time
-	mu            sync.RWMutex
-	checkInterval time.Duration
+	skillsDir      string
+	cache          map[string]SkillInfo
+	cacheHash      string
+	lastCheck      time.Time
+	mu             sync.RWMutex
+	checkInterval  time.Duration
+	disabledSkills []string
 }
 
 // NewDiscovery creates a new skill discovery instance
-func NewDiscovery(skillsDir string) *Discovery {
+func NewDiscovery(skillsDir string, disabledSkills []string) *Discovery {
 	return &Discovery{
-		skillsDir:     skillsDir,
-		cache:         make(map[string]SkillInfo),
-		checkInterval: 5 * time.Second, // Minimum time between directory scans
+		skillsDir:      skillsDir,
+		cache:          make(map[string]SkillInfo),
+		checkInterval:  5 * time.Second, // Minimum time between directory scans
+		disabledSkills: disabledSkills,
 	}
+}
+
+// UpdateDisabledSkills updates the disabled skills list
+func (d *Discovery) UpdateDisabledSkills(disabledSkills []string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.disabledSkills = disabledSkills
+}
+
+// isSkillDisabled checks if a skill is in the disabled list
+func (d *Discovery) isSkillDisabled(name string) bool {
+	for _, disabled := range d.disabledSkills {
+		if disabled == name {
+			return true
+		}
+	}
+	return false
 }
 
 // GetSkills returns all discovered skills with their descriptions
@@ -97,6 +117,7 @@ func (d *Discovery) cachedSkillsList() []SkillInfo {
 
 	// Add discovered skills
 	for _, skill := range d.cache {
+		skill.Enabled = !d.isSkillDisabled(skill.Name)
 		result = append(result, skill)
 	}
 
@@ -204,6 +225,7 @@ func (d *Discovery) discoverSkills(ctx context.Context) ([]SkillInfo, error) {
 		skills = append(skills, SkillInfo{
 			Name:        skillName,
 			Description: description,
+			Enabled:     !d.isSkillDisabled(skillName),
 			SkillPath:   skillPath,
 			Content:     bodyContent,
 			Metadata:    metadata,

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { BookOpen, Plus, Eye, Edit2, Trash2 } from 'lucide-react'
-import { getSkills, getSkill, createSkill, updateSkill, deleteSkill } from '../services/api'
+import { BookOpen, Plus, Edit2, Trash2, ToggleRight, ToggleLeft, ArrowLeft } from 'lucide-react'
+import { getSkills, getSkill, createSkill, updateSkill, deleteSkill, enableSkill, disableSkill } from '../services/api'
 import './SkillsPanel.css'
 
 const SkillsPanel = () => {
@@ -98,6 +98,26 @@ const SkillsPanel = () => {
     }
   }
 
+  const handleToggleSkill = async (skill) => {
+    try {
+      setError('')
+      const action = skill.enabled ? disableSkill : enableSkill
+      const response = await action(skill.name)
+      if (response.success) {
+        const actionText = skill.enabled ? 'disabled' : 'enabled'
+        setSuccess(`${skill.name} ${actionText} successfully`)
+        await loadSkills()
+        // 更新当前选中的 skill 状态
+        if (selectedSkill?.name === skill.name) {
+          setSelectedSkill({ ...selectedSkill, enabled: !skill.enabled })
+        }
+        setTimeout(() => setSuccess(''), 3000)
+      }
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || 'Failed to toggle skill')
+    }
+  }
+
   const openEditForm = (skill) => {
     setEditForm({
       name: skill.name,
@@ -151,8 +171,8 @@ const SkillsPanel = () => {
         ) : (
           <div className="skills-list">
             {skills.map((skill) => (
-              <div 
-                key={skill.name} 
+              <div
+                key={skill.name}
                 className={`skill-item ${selectedSkill?.name === skill.name ? 'active' : ''}`}
                 onClick={() => handleViewSkill(skill.name)}
               >
@@ -163,37 +183,10 @@ const SkillsPanel = () => {
                   <div className="skill-name">{skill.name}</div>
                   <div className="skill-description">{skill.description}</div>
                 </div>
-                <div className="skill-actions">
-                  <button 
-                    className="btn-skill-action" 
-                    title={t('skill.view', 'View')}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleViewSkill(skill.name)
-                    }}
-                  >
-                    <Eye size={16} />
-                  </button>
-                  <button 
-                    className="btn-skill-action" 
-                    title={t('skill.edit', 'Edit')}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      openEditForm(skill)
-                    }}
-                  >
-                    <Edit2 size={16} />
-                  </button>
-                  <button 
-                    className="btn-skill-action btn-delete" 
-                    title={t('skill.delete', 'Delete')}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleDeleteSkill(skill.name)
-                    }}
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                <div className="skill-status">
+                  <span className={`status-indicator ${skill.enabled ? 'enabled' : 'disabled'}`}>
+                    {skill.enabled ? '●' : '○'}
+                  </span>
                 </div>
               </div>
             ))}
@@ -205,19 +198,33 @@ const SkillsPanel = () => {
       {selectedSkill && (
         <div className="skill-detail-panel">
           <div className="detail-panel-header">
-            <h3>{selectedSkill.name}</h3>
-            <button className="btn-close-detail" onClick={() => setSelectedSkill(null)}>×</button>
+            <div className="header-left">
+              <button className="btn-back" onClick={() => setSelectedSkill(null)} title={t('common.back')}>
+                <ArrowLeft size={18} />
+              </button>
+              <h3>{selectedSkill.name}</h3>
+            </div>
           </div>
           <div className="detail-panel-content">
+            <div className="detail-section">
+              <div className="detail-row">
+                <span className="detail-label">{t('skill.status', 'Status')}:</span>
+                <span className={`status-badge ${selectedSkill.enabled ? 'enabled' : 'disabled'}`}>
+                  {selectedSkill.enabled ? t('skill.enabled', 'Enabled') : t('skill.disabled', 'Disabled')}
+                </span>
+              </div>
+            </div>
+
             {selectedSkill.description && (
-              <div className="detail-meta-item">
-                <strong>{t('skill.description', 'Description')}:</strong>
-                <p>{selectedSkill.description}</p>
+              <div className="detail-section">
+                <h3>{t('skill.description', 'Description')}</h3>
+                <p className="detail-description">{selectedSkill.description}</p>
               </div>
             )}
+
             {selectedSkill.tags && selectedSkill.tags.length > 0 && (
-              <div className="detail-meta-item">
-                <strong>{t('skill.tags', 'Tags')}:</strong>
+              <div className="detail-section">
+                <h3>{t('skill.tags', 'Tags')}</h3>
                 <div className="tags">
                   {selectedSkill.tags.map((tag, index) => (
                     <span key={index} className="tag">{tag}</span>
@@ -225,26 +232,69 @@ const SkillsPanel = () => {
                 </div>
               </div>
             )}
+
+            {selectedSkill.version && (
+              <div className="detail-section">
+                <div className="detail-row">
+                  <span className="detail-label">{t('skill.version', 'Version')}:</span>
+                  <span className="detail-value">{selectedSkill.version}</span>
+                </div>
+              </div>
+            )}
+
+            {selectedSkill.author && (
+              <div className="detail-section">
+                <div className="detail-row">
+                  <span className="detail-label">{t('skill.author', 'Author')}:</span>
+                  <span className="detail-value">{selectedSkill.author}</span>
+                </div>
+              </div>
+            )}
+
+            {selectedSkill.path && (
+              <div className="detail-section">
+                <h3>{t('skill.path', 'Path')}</h3>
+                <code className="detail-path">{selectedSkill.path}</code>
+              </div>
+            )}
+
             {selectedSkill.content && (
-              <div className="detail-content">
-                <strong>{t('skill.content', 'Content')}:</strong>
+              <div className="detail-section">
+                <h3>{t('skill.content', 'Content')}</h3>
                 <pre className="content-preview">{selectedSkill.content}</pre>
               </div>
             )}
+
             <div className="detail-actions">
-              <button 
-                className="btn-primary"
+              <button
+                className={`btn btn-action ${selectedSkill.enabled ? 'btn-disable' : 'btn-enable'}`}
+                onClick={() => handleToggleSkill(selectedSkill)}
+              >
+                {selectedSkill.enabled ? (
+                  <>
+                    <ToggleRight size={16} />
+                    {t('common.disable')}
+                  </>
+                ) : (
+                  <>
+                    <ToggleLeft size={16} />
+                    {t('common.enable')}
+                  </>
+                )}
+              </button>
+              <button
+                className="btn btn-action"
                 onClick={() => openEditForm(selectedSkill)}
               >
                 <Edit2 size={16} />
                 {t('skill.edit', 'Edit')}
               </button>
-              <button 
-                className="btn-danger"
+              <button
+                className="btn btn-action btn-delete"
                 onClick={() => handleDeleteSkill(selectedSkill.name)}
               >
                 <Trash2 size={16} />
-                {t('skill.delete', 'Delete')}
+                {t('common.delete')}
               </button>
             </div>
           </div>

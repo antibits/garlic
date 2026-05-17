@@ -236,6 +236,18 @@ export const deleteSkill = async (name) => {
   return response.data
 }
 
+// 启用 skill
+export const enableSkill = async (name) => {
+  const response = await api.put(`/skills/${name}/enable`)
+  return response.data
+}
+
+// 禁用 skill
+export const disableSkill = async (name) => {
+  const response = await api.put(`/skills/${name}/disable`)
+  return response.data
+}
+
 // 导出默认对象
 const apiService = {
   setBaseUrl,
@@ -272,7 +284,9 @@ const apiService = {
   getSkill,
   createSkill,
   updateSkill,
-  deleteSkill
+  deleteSkill,
+  enableSkill,
+  disableSkill
 }
 
 export default apiService

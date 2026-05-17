@@ -249,12 +249,12 @@ type ExecutorAgent struct {
 }
 
 // NewExecutorAgent creates a new executor agent
-func NewExecutorAgent(client *llm.Client, systemPrompt string, toolsDir, skillsDir, pythonPath string, disabledTools []string) *ExecutorAgent {
+func NewExecutorAgent(client *llm.Client, systemPrompt string, toolsDir, skillsDir, pythonPath string, disabledTools, disabledSkills []string) *ExecutorAgent {
 	return &ExecutorAgent{
 		client:         client,
 		systemPrompt:   systemPrompt,
 		toolDiscovery:  tool.NewToolDiscovery(toolsDir, pythonPath, disabledTools),
-		skillDiscovery: skill.NewDiscovery(skillsDir),
+		skillDiscovery: skill.NewDiscovery(skillsDir, disabledSkills),
 		platform:       getPlatformName(),
 	}
 }

@@ -30,15 +30,15 @@ var upgrader = websocket.Upgrader{
 
 // Server Web 服务器
 type Server struct {
-	harness              *harness.Harness
-	config               *config.Config
-	configPath           string
-	engine               *gin.Engine
-	httpServer           *http.Server
-	wsMu                 sync.RWMutex
-	wsClients            map[string]*WSClient // sessionID -> WSClient
-	wsClientsMux         sync.RWMutex
-	agentClientsFactory  func(cfg *config.Config) (harness.AgentClients, error)
+	harness             *harness.Harness
+	config              *config.Config
+	configPath          string
+	engine              *gin.Engine
+	httpServer          *http.Server
+	wsMu                sync.RWMutex
+	wsClients           map[string]*WSClient // sessionID -> WSClient
+	wsClientsMux        sync.RWMutex
+	agentClientsFactory func(cfg *config.Config) (harness.AgentClients, error)
 }
 
 // WSClient WebSocket 客户端连接
@@ -147,6 +147,8 @@ func (s *Server) setupRoutes() {
 		api.POST("/skills", s.createSkill)
 		api.PUT("/skills/:name", s.updateSkill)
 		api.DELETE("/skills/:name", s.deleteSkill)
+		api.PUT("/skills/:name/disable", s.disableSkill)
+		api.PUT("/skills/:name/enable", s.enableSkill)
 
 		// 工具管理
 		api.GET("/tools", s.listTools)
@@ -169,7 +171,7 @@ func (s *Server) setupRoutes() {
 func (s *Server) serveStaticFiles() {
 	// 获取 web/dist 目录的绝对路径
 	distDir := filepath.Join("web", "dist")
-	
+
 	// 检查目录是否存在
 	if _, err := os.Stat(distDir); os.IsNotExist(err) {
 		logger.Warn("Web dist directory not found, static file serving disabled", zap.String("path", distDir))
@@ -179,21 +181,21 @@ func (s *Server) serveStaticFiles() {
 	//  serve static files from web/dist
 	s.engine.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
-		
+
 		// 尝试提供请求的文件
 		filePath := filepath.Join(distDir, path)
 		if _, err := os.Stat(filePath); err == nil {
 			c.File(filePath)
 			return
 		}
-		
+
 		// 如果文件不存在，返回 index.html（SPA 支持）
 		indexFile := filepath.Join(distDir, "index.html")
 		if _, err := os.Stat(indexFile); err == nil {
 			c.File(indexFile)
 			return
 		}
-		
+
 		// 如果 index.html 也不存在，返回 404
 		c.String(http.StatusNotFound, "404 page not found")
 	})
@@ -895,6 +897,7 @@ type SkillInfo struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	Path        string   `json:"path"`
+	Enabled     bool     `json:"enabled"`
 	Version     string   `json:"version,omitempty"`
 	Author      string   `json:"author,omitempty"`
 	Created     string   `json:"created,omitempty"`
@@ -908,12 +911,19 @@ func (s *Server) listSkills(c *gin.Context) {
 	ctx := c.Request.Context()
 	skills := s.harness.GetSkillDiscovery().ListSkills(ctx)
 
+	// 创建禁用列表的映射，方便快速查找
+	disabledMap := make(map[string]bool)
+	for _, disabled := range s.config.DisabledSkills {
+		disabledMap[disabled] = true
+	}
+
 	skillInfos := make([]SkillInfo, 0, len(skills))
 	for _, skill := range skills {
 		skillInfos = append(skillInfos, SkillInfo{
 			Name:        skill.Name,
 			Description: skill.Description,
 			Path:        skill.Path,
+			Enabled:     !disabledMap[skill.Name],
 		})
 	}
 
@@ -940,12 +950,22 @@ func (s *Server) getSkill(c *gin.Context) {
 		return
 	}
 
+	// 检查是否禁用
+	enabled := true
+	for _, disabled := range s.config.DisabledSkills {
+		if disabled == name {
+			enabled = false
+			break
+		}
+	}
+
 	c.JSON(http.StatusOK, Response{
 		Success: true,
 		Data: SkillInfo{
 			Name:        skill.Name,
 			Description: skill.Description,
 			Path:        skill.SkillPath,
+			Enabled:     enabled,
 			Version:     skill.Metadata.Version,
 			Author:      skill.Metadata.Author,
 			Created:     skill.Metadata.Created,
@@ -1051,6 +1071,113 @@ func (s *Server) deleteSkill(c *gin.Context) {
 	c.JSON(http.StatusOK, Response{
 		Success: true,
 		Data:    map[string]string{"message": fmt.Sprintf("Skill '%s' deleted successfully", name)},
+	})
+}
+
+// disableSkill 禁用 skill
+func (s *Server) disableSkill(c *gin.Context) {
+	name := c.Param("name")
+
+	// 检查 skill 是否存在
+	_, err := s.harness.GetSkillDiscovery().GetSkillByName(c.Request.Context(), name)
+	if err != nil {
+		c.JSON(http.StatusNotFound, Response{
+			Success: false,
+			Error:   fmt.Sprintf("skill '%s' not found", name),
+		})
+		return
+	}
+
+	// 添加到禁用列表
+	// 检查是否已经禁用
+	for _, disabled := range s.config.DisabledSkills {
+		if disabled == name {
+			c.JSON(http.StatusOK, Response{
+				Success: true,
+				Data:    map[string]string{"message": fmt.Sprintf("skill '%s' is already disabled", name)},
+			})
+			return
+		}
+	}
+
+	s.config.DisabledSkills = append(s.config.DisabledSkills, name)
+
+	// 保存配置
+	if err := s.saveConfig(); err != nil {
+		c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Error:   "failed to save config: " + err.Error(),
+		})
+		return
+	}
+
+	// 更新 harness
+	harnessCfg := &harness.Config{
+		SkillsDir:            s.config.Tools.SkillsDir,
+		DisabledSkills:       s.config.DisabledSkills,
+		ConvCompressDisabled: s.config.ConvCompress.Disabled,
+		ConvCompressRound:    s.config.ConvCompress.Round,
+		ConvCompressLength:   s.config.ConvCompress.Length,
+	}
+	s.harness.UpdateConfig(harnessCfg)
+
+	logger.Info("Skill disabled", zap.String("skill", name))
+
+	c.JSON(http.StatusOK, Response{
+		Success: true,
+		Data:    map[string]string{"message": fmt.Sprintf("skill '%s' disabled successfully", name)},
+	})
+}
+
+// enableSkill 启用 skill
+func (s *Server) enableSkill(c *gin.Context) {
+	name := c.Param("name")
+
+	// 从禁用列表中移除
+	found := false
+	disabledSkills := make([]string, 0, len(s.config.DisabledSkills))
+	for _, disabled := range s.config.DisabledSkills {
+		if disabled == name {
+			found = true
+			continue
+		}
+		disabledSkills = append(disabledSkills, disabled)
+	}
+
+	if !found {
+		c.JSON(http.StatusOK, Response{
+			Success: true,
+			Data:    map[string]string{"message": fmt.Sprintf("skill '%s' is not disabled", name)},
+		})
+		return
+	}
+
+	s.config.DisabledSkills = disabledSkills
+
+	// 保存配置
+	if err := s.saveConfig(); err != nil {
+		c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Error:   "failed to save config: " + err.Error(),
+		})
+		return
+	}
+
+	// 更新 harness
+	harnessCfg := &harness.Config{
+		SkillsDir:            s.config.Tools.SkillsDir,
+		DisabledSkills:       s.config.DisabledSkills,
+		ConvCompressDisabled: s.config.ConvCompress.Disabled,
+		ConvCompressRound:    s.config.ConvCompress.Round,
+		ConvCompressLength:   s.config.ConvCompress.Length,
+	}
+	s.harness.UpdateConfig(harnessCfg)
+
+	logger.Info("Skill enabled", zap.String("skill", name))
+
+	c.JSON(http.StatusOK, Response{
+		Success: true,
+		Data:    map[string]string{"message": fmt.Sprintf("skill '%s' enabled successfully", name)},
 	})
 }
 
