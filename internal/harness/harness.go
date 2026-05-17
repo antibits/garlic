@@ -123,17 +123,17 @@ func (h *Harness) UpdateAgents(clients AgentClients) {
 // UpdateConfig updates the harness configuration
 func (h *Harness) UpdateConfig(cfg *Config) {
 	h.config = cfg
-	
+
 	// 更新 executor 的 disabledTools
 	if h.executor != nil {
 		h.executor.UpdateDisabledTools(cfg.DisabledTools)
 	}
-	
+
 	// 更新 executorAgent 的 toolDiscovery 的 disabledTools
 	if h.executorAgent != nil && h.executorAgent.GetToolDiscovery() != nil {
 		h.executorAgent.GetToolDiscovery().UpdateDisabledTools(cfg.DisabledTools)
 	}
-	
+
 	logger.Info("Harness configuration updated",
 		zap.Bool("convCompressDisabled", cfg.ConvCompressDisabled),
 		zap.Int("convCompressRound", cfg.ConvCompressRound),
@@ -180,6 +180,12 @@ func (h *Harness) AddSession(name string) string {
 
 // sessionWorker is a goroutine that processes requests for a single session
 func (h *Harness) sessionWorker(ctx context.Context, s *session.Session) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("session worker error recover.", zap.Any("recover", r))
+		}
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -743,7 +749,7 @@ func (h *Harness) showSkill(ctx context.Context, name string) string {
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("=== Skill: %s ===\n\n", skill.Name))
-	
+
 	if skill.Metadata.Description != "" {
 		sb.WriteString(fmt.Sprintf("**Description**: %s\n\n", skill.Metadata.Description))
 	}
@@ -772,11 +778,11 @@ func (h *Harness) showSkill(ctx context.Context, name string) string {
 			sb.WriteString(fmt.Sprintf("- %s (%s): %s\n", tool.Name, required, tool.Description))
 		}
 	}
-	
+
 	sb.WriteString(fmt.Sprintf("\n**Path**: %s\n\n", skill.SkillPath))
 	sb.WriteString("---\n\n")
 	sb.WriteString(skill.Content)
-	
+
 	return sb.String()
 }
 
