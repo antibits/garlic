@@ -22,7 +22,7 @@ var (
 	new_line_pattern, _ = regexp.Compile("[(\r)?\n]+")
 )
 
-func descInline(desc string)string{
+func descInline(desc string) string {
 	return string(new_line_pattern.ReplaceAll([]byte(desc), []byte("<br/>")))
 }
 

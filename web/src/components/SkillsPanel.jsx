@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { BookOpen, Plus, Edit2, Trash2, ToggleRight, ToggleLeft, ArrowLeft } from 'lucide-react'
-import { getSkills, getSkill, createSkill, updateSkill, deleteSkill, enableSkill, disableSkill } from '../services/api'
+import { BookOpen, Plus, Edit2, Trash2, ToggleRight, ToggleLeft, ArrowLeft, Download } from 'lucide-react'
+import { getSkills, getSkill, createSkill, importSkill, updateSkill, deleteSkill, enableSkill, disableSkill } from '../services/api'
 import './SkillsPanel.css'
 
 const SkillsPanel = () => {
@@ -11,6 +11,10 @@ const SkillsPanel = () => {
   const [selectedSkill, setSelectedSkill] = useState(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [showEditForm, setShowEditForm] = useState(false)
+  const [showImportForm, setShowImportForm] = useState(false)
+  const [importFile, setImportFile] = useState(null)
+  const [importSkillId, setImportSkillId] = useState('')
+  const [importing, setImporting] = useState(false)
   const [createForm, setCreateForm] = useState({ name: '', description: '', content: '' })
   const [editForm, setEditForm] = useState({ name: '', description: '', content: '' })
   const [error, setError] = useState('')
@@ -60,6 +64,36 @@ const SkillsPanel = () => {
       }
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Failed to create skill')
+    }
+  }
+
+  const handleImportSkill = async (e) => {
+    e.preventDefault()
+    if (!importFile) {
+      setError('Please select a file to import')
+      return
+    }
+    try {
+      setImporting(true)
+      setError('')
+      const formData = new FormData()
+      formData.append('file', importFile)
+      if (importSkillId.trim()) {
+        formData.append('skill_id', importSkillId.trim())
+      }
+      const response = await importSkill(formData)
+      if (response.success) {
+        setSuccess(response.data?.message || 'Skill imported successfully')
+        setShowImportForm(false)
+        setImportFile(null)
+        setImportSkillId('')
+        await loadSkills()
+        setTimeout(() => setSuccess(''), 3000)
+      }
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || 'Failed to import skill')
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -131,13 +165,22 @@ const SkillsPanel = () => {
     <div className="skills-panel">
       <div className="skills-header">
         <h2>{t('skill.title', 'Skills')} ({skills.length})</h2>
-        <button 
-          className="btn-add-skill" 
-          title={t('skill.create', 'Create Skill')}
-          onClick={() => setShowCreateForm(true)}
-        >
-          <Plus size={18} />
-        </button>
+        <div className="header-actions">
+          <button
+            className="btn-import-skill"
+            title={t('skill.import', 'Import Skill')}
+            onClick={() => setShowImportForm(true)}
+          >
+            <Download size={16} />
+          </button>
+          <button
+            className="btn-add-skill"
+            title={t('skill.create', 'Create Skill')}
+            onClick={() => setShowCreateForm(true)}
+          >
+            <Plus size={16} />
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -161,12 +204,20 @@ const SkillsPanel = () => {
           <div className="empty-state">
             <BookOpen size={48} />
             <p>{t('skill.noSkills', 'No skills available')}</p>
-            <button 
-              className="btn-primary"
-              onClick={() => setShowCreateForm(true)}
-            >
-              {t('skill.createFirst', 'Create Your First Skill')}
-            </button>
+            <div className="empty-state-actions">
+              <button
+                className="btn-primary"
+                onClick={() => setShowCreateForm(true)}
+              >
+                + {t('skill.create', 'Create Skill')}
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={() => setShowImportForm(true)}
+              >
+                📥 {t('skill.import', 'Import Skill')}
+              </button>
+            </div>
           </div>
         ) : (
           <div className="skills-list">
@@ -297,6 +348,59 @@ const SkillsPanel = () => {
                 {t('common.delete')}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 导入表单 */}
+      {showImportForm && (
+        <div className="modal-overlay" onClick={() => { setShowImportForm(false); setImportFile(null); setImportSkillId('') }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{t('skill.importSkill', 'Import Skill')}</h2>
+              <button className="close-btn" onClick={() => { setShowImportForm(false); setImportFile(null); setImportSkillId('') }}>×</button>
+            </div>
+            <form onSubmit={handleImportSkill}>
+              <div className="form-group">
+                <label>{t('skill.skillId', 'Skill ID')} *</label>
+                <input
+                  type="text"
+                  value={importSkillId}
+                  onChange={(e) => setImportSkillId(e.target.value)}
+                  required
+                  placeholder="Enter skill ID (directory name under skills/)"
+                />
+                <small>
+                  {t('skill.skillIdHint', 'This will be used as the directory name under skills/ (e.g., my_skill)')}
+                </small>
+              </div>
+              <div className="form-group">
+                <label>{t('skill.importFile', 'File')} *</label>
+                <input
+                  type="file"
+                  accept=".md,.zip"
+                  onChange={(e) => setImportFile(e.target.files[0])}
+                  required
+                />
+                <small>
+                  {t('skill.importFileHint', 'Supports Skill.md files or zip archives containing Skill.md and optional scripts/ directory')}
+                </small>
+              </div>
+              {importFile && (
+                <div className="import-file-info">
+                  <p><strong>{t('skill.selectedFile', 'Selected file')}:</strong> {importFile.name}</p>
+                  <p><strong>{t('skill.fileSize', 'File size')}:</strong> {(importFile.size / 1024).toFixed(2)} KB</p>
+                </div>
+              )}
+              <div className="form-actions">
+                <button type="button" className="btn-secondary" onClick={() => { setShowImportForm(false); setImportFile(null); setImportSkillId('') }}>
+                  {t('common.cancel', 'Cancel')}
+                </button>
+                <button type="submit" className="btn-primary" disabled={importing || !importFile}>
+                  {importing ? 'Importing...' : t('skill.import', 'Import')}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

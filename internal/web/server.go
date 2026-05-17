@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -145,6 +146,7 @@ func (s *Server) setupRoutes() {
 		api.GET("/skills", s.listSkills)
 		api.GET("/skills/:name", s.getSkill)
 		api.POST("/skills", s.createSkill)
+		api.POST("/skills/import", s.importSkill)
 		api.PUT("/skills/:name", s.updateSkill)
 		api.DELETE("/skills/:name", s.deleteSkill)
 		api.PUT("/skills/:name/disable", s.disableSkill)
@@ -894,16 +896,24 @@ func (s *Server) updateConfig(c *gin.Context) {
 
 // SkillInfo API 响应结构
 type SkillInfo struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Path        string   `json:"path"`
-	Enabled     bool     `json:"enabled"`
-	Version     string   `json:"version,omitempty"`
-	Author      string   `json:"author,omitempty"`
-	Created     string   `json:"created,omitempty"`
-	Updated     string   `json:"updated,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	Content     string   `json:"content,omitempty"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	Path        string        `json:"path"`
+	Enabled     bool          `json:"enabled"`
+	Version     string        `json:"version,omitempty"`
+	Author      string        `json:"author,omitempty"`
+	Created     string        `json:"created,omitempty"`
+	Updated     string        `json:"updated,omitempty"`
+	Tags        []string      `json:"tags,omitempty"`
+	Content     string        `json:"content,omitempty"`
+	HasScripts  bool          `json:"has_scripts"`
+	Scripts     []ScriptInfo  `json:"scripts,omitempty"`
+}
+
+// ScriptInfo represents a script file in a skill's scripts/ directory
+type ScriptInfo struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
 }
 
 // listSkills 获取所有 skills
@@ -919,11 +929,22 @@ func (s *Server) listSkills(c *gin.Context) {
 
 	skillInfos := make([]SkillInfo, 0, len(skills))
 	for _, skill := range skills {
+		// Convert scripts to API response format
+		scripts := make([]ScriptInfo, 0, len(skill.Scripts))
+		for _, script := range skill.Scripts {
+			scripts = append(scripts, ScriptInfo{
+				Name: script.Name,
+				Path: script.Path,
+			})
+		}
+		
 		skillInfos = append(skillInfos, SkillInfo{
 			Name:        skill.Name,
 			Description: skill.Description,
 			Path:        skill.Path,
 			Enabled:     !disabledMap[skill.Name],
+			HasScripts:  skill.HasScripts,
+			Scripts:     scripts,
 		})
 	}
 
@@ -979,9 +1000,10 @@ func (s *Server) getSkill(c *gin.Context) {
 // createSkill 创建新 skill
 func (s *Server) createSkill(c *gin.Context) {
 	var req struct {
-		Name        string `json:"name" binding:"required"`
-		Description string `json:"description" binding:"required"`
-		Content     string `json:"content"`
+		Name         string `json:"name" binding:"required"`
+		Description  string `json:"description" binding:"required"`
+		Content      string `json:"content"`
+		WithScripts  bool   `json:"with_scripts"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -997,7 +1019,7 @@ func (s *Server) createSkill(c *gin.Context) {
 		content = fmt.Sprintf("## 描述\n\n%s\n\n## 使用场景\n\n- 场景 1\n- 场景 2\n\n## 工具使用流程\n\n### 步骤 1:\n\n描述步骤...\n\n## 注意事项\n\n1. 注意事项 1", req.Description)
 	}
 
-	if err := s.harness.GetSkillDiscovery().CreateSkill(req.Name, req.Description, content); err != nil {
+	if err := s.harness.GetSkillDiscovery().CreateSkill(req.Name, req.Description, content, req.WithScripts); err != nil {
 		c.JSON(http.StatusInternalServerError, Response{
 			Success: false,
 			Error:   err.Error(),
@@ -1008,6 +1030,84 @@ func (s *Server) createSkill(c *gin.Context) {
 	c.JSON(http.StatusCreated, Response{
 		Success: true,
 		Data:    map[string]string{"message": fmt.Sprintf("Skill '%s' created successfully", req.Name)},
+	})
+}
+
+// importSkill 导入 skill（支持 Skill.md 文件或 zip 压缩包）
+func (s *Server) importSkill(c *gin.Context) {
+	// 支持 multipart/form-data 和 JSON 格式
+	var sourcePath string
+	var isZip bool
+	var skillID string
+
+	// 尝试从 multipart/form-data 获取文件
+	if file, header, err := c.Request.FormFile("file"); err == nil {
+		defer file.Close()
+
+		// 获取 skill_id 参数（可选）
+		skillID = c.PostForm("skill_id")
+
+		// 创建临时文件
+		tmpDir := os.TempDir()
+		tmpFile, err := os.CreateTemp(tmpDir, "skill-import-*")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, Response{
+				Success: false,
+				Error:   fmt.Sprintf("Failed to create temp file: %v", err),
+			})
+			return
+		}
+		defer os.Remove(tmpFile.Name())
+
+		if _, err := io.Copy(tmpFile, file); err != nil {
+			tmpFile.Close()
+			c.JSON(http.StatusInternalServerError, Response{
+				Success: false,
+				Error:   fmt.Sprintf("Failed to save uploaded file: %v", err),
+			})
+			return
+		}
+		tmpFile.Close()
+
+		sourcePath = tmpFile.Name()
+		isZip = strings.HasSuffix(strings.ToLower(header.Filename), ".zip")
+	} else {
+		// 从 JSON 获取路径
+		var req struct {
+			FilePath string `json:"file_path" binding:"required"`
+			IsZip    bool   `json:"is_zip"`
+			SkillID  string `json:"skill_id"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, Response{
+				Success: false,
+				Error:   "Invalid request body: " + err.Error(),
+			})
+			return
+		}
+
+		sourcePath = req.FilePath
+		isZip = req.IsZip
+		skillID = req.SkillID
+	}
+
+	if err := s.harness.GetSkillDiscovery().ImportSkill(sourcePath, isZip, skillID); err != nil {
+		c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	fileType := "Skill.md file"
+	if isZip {
+		fileType = "zip archive"
+	}
+
+	c.JSON(http.StatusOK, Response{
+		Success: true,
+		Data:    map[string]string{"message": fmt.Sprintf("Skill imported successfully from %s", fileType)},
 	})
 }
 

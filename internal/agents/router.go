@@ -56,8 +56,8 @@ func NewRouter(client *llm.Client, systemPrompt string) *Router {
 }
 
 // Analyze classifies the user request and returns routing decision
-func (r *Router) Analyze(ctx context.Context, messages []model.Message, languageInstr string) (string, *RouterResult, *llm.Usage, error) {
-	chatMessages := r.buildMessages(messages, languageInstr)
+func (r *Router) Analyze(ctx context.Context, messages []model.Message, languageInstr string, activeSkillContent string) (string, *RouterResult, *llm.Usage, error) {
+	chatMessages := r.buildMessages(messages, languageInstr, activeSkillContent)
 
 	content, usage, err := r.client.ChatStream(ctx, chatMessages, "[Router] ")
 	if err != nil {
@@ -70,8 +70,8 @@ func (r *Router) Analyze(ctx context.Context, messages []model.Message, language
 
 // AnalyzeStream classifies the user request with streaming callback
 // For simple responses (plain text), streams content in real-time
-func (r *Router) AnalyzeStream(ctx context.Context, messages []model.Message, languageInstr string, onChunk llm.StreamChunkCallback) (string, *RouterResult, *llm.Usage, error) {
-	chatMessages := r.buildMessages(messages, languageInstr)
+func (r *Router) AnalyzeStream(ctx context.Context, messages []model.Message, languageInstr string, activeSkillContent string, onChunk llm.StreamChunkCallback) (string, *RouterResult, *llm.Usage, error) {
+	chatMessages := r.buildMessages(messages, languageInstr, activeSkillContent)
 
 	var fullContent strings.Builder
 	isJSON := false
@@ -122,7 +122,7 @@ func (r *Router) AnalyzeStream(ctx context.Context, messages []model.Message, la
 	return content, result, usage, parseErr
 }
 
-func (r *Router) buildMessages(messages []model.Message, languageInstr string) []openai.ChatCompletionMessageParamUnion {
+func (r *Router) buildMessages(messages []model.Message, languageInstr string, activeSkillContent string) []openai.ChatCompletionMessageParamUnion {
 	systemPrompt := r.systemPrompt
 	if systemPrompt == "" {
 		systemPrompt = `You are Garlic AI Agent. Your response should be based on facts. If there is a lack of facts, you should try to use tools to obtain them. Unless requested by the user, do not simulate or construct any information. Your core responsibility is to analyze the user's request and conversation context, determine the most appropriate next action, and output strictly according to the rules below.
@@ -152,7 +152,7 @@ func (r *Router) buildMessages(messages []model.Message, languageInstr string) [
 - **Pure JSON Only:** For intents "tool", "step_by_step", or "finished", output ONLY the raw JSON string.
 - **No Markdown:** NEVER wrap JSON in code blocks (e.g., ` + "```json ... ```" + `).
 - **No Chatter:** NEVER add prefixes like "Okay," "Here is the plan," or suffixes like "Let me know if you need more."
-- **Precision:** 
+- **Precision:**
 - "tool_description" must specify: Which capability + What data + Expected result.
 - "current_step" must be: A single, self-contained action. Do NOT chain multiple sub-tasks (avoid "and then", "followed by", or "analyze and summarize"). It must be independently executable without context from later steps.
 - "remaining_plan" must be: A high-level roadmap of the next logical phase(s). Keep it concise for context tracking without over-planning details.
@@ -183,6 +183,8 @@ Output: {"intent": "finished"}
 4. **Format Purity:** Downstream systems parse this via "json.loads()". Any extra characters will cause crashes. Strictly adhere to "Output ONLY the specified content.
 5. **Current Events:** For questions about current events or timely topics, prioritize using tools (e.g., web browser) to gather the latest factual reports and news. Base your response on verified, up-to-date information rather than relying solely on training data.
 
+{{.skill_instruction}}
+
 Current Time: {{.current_time}}
 
 {{.language_instr}}`
@@ -195,6 +197,11 @@ Current Time: {{.current_time}}
 	if languageInstr != "" {
 		data["language_instr"] = languageInstr
 	}
+	if activeSkillContent != "" {
+		data["skill_instruction"] = fmt.Sprintf("## Active Skill Instruction\n%s", activeSkillContent)
+	} else {
+		data["skill_instruction"] = ""
+	}
 
 	// Render template
 	rendered, err := r.client.RenderTemplate(systemPrompt, data)
@@ -203,6 +210,9 @@ Current Time: {{.current_time}}
 		rendered = systemPrompt
 		if languageInstr != "" {
 			rendered += "\n\n" + languageInstr
+		}
+		if activeSkillContent != "" {
+			rendered += fmt.Sprintf("\n\n## Active Skill Instruction\n%s", activeSkillContent)
 		}
 		rendered += fmt.Sprintf("\n\nCurrent Time: %s", data["current_time"])
 	}

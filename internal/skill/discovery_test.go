@@ -16,11 +16,11 @@ func TestDiscovery_CreateSkill(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Create discovery instance
-	discovery := NewDiscovery(tempDir)
+	discovery := NewDiscovery(tempDir, nil)
 	ctx := context.Background()
 
 	// Test creating a skill
-	err = discovery.CreateSkill("测试技能", "这是一个测试技能", "## 描述\n\n测试内容")
+	err = discovery.CreateSkill("测试技能", "这是一个测试技能", "## 描述\n\n测试内容", false)
 	if err != nil {
 		t.Fatalf("Failed to create skill: %v", err)
 	}
@@ -60,11 +60,11 @@ func TestDiscovery_GetSkillByName(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	discovery := NewDiscovery(tempDir)
+	discovery := NewDiscovery(tempDir, nil)
 	ctx := context.Background()
 
 	// Create a skill
-	err = discovery.CreateSkill("Test Skill", "Test description", "## Test content")
+	err = discovery.CreateSkill("Test Skill", "Test description", "## Test content", false)
 	if err != nil {
 		t.Fatalf("Failed to create skill: %v", err)
 	}
@@ -89,11 +89,11 @@ func TestDiscovery_UpdateSkill(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	discovery := NewDiscovery(tempDir)
+	discovery := NewDiscovery(tempDir, nil)
 	ctx := context.Background()
 
 	// Create a skill
-	err = discovery.CreateSkill("Update Test", "Original description", "## Original content")
+	err = discovery.CreateSkill("Update Test", "Original description", "## Original content", false)
 	if err != nil {
 		t.Fatalf("Failed to create skill: %v", err)
 	}
@@ -128,11 +128,11 @@ func TestDiscovery_DeleteSkill(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	discovery := NewDiscovery(tempDir)
+	discovery := NewDiscovery(tempDir, nil)
 	ctx := context.Background()
 
 	// Create a skill
-	err = discovery.CreateSkill("Delete Test", "To be deleted", "## Delete me")
+	err = discovery.CreateSkill("Delete Test", "To be deleted", "## Delete me", false)
 	if err != nil {
 		t.Fatalf("Failed to create skill: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestDiscovery_ListSkills(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	discovery := NewDiscovery(tempDir)
+	discovery := NewDiscovery(tempDir, nil)
 	ctx := context.Background()
 
 	// Create multiple skills
@@ -178,7 +178,7 @@ func TestDiscovery_ListSkills(t *testing.T) {
 	}
 
 	for _, s := range skills {
-		err := discovery.CreateSkill(s.name, s.description, s.content)
+		err := discovery.CreateSkill(s.name, s.description, s.content, false)
 		if err != nil {
 			t.Fatalf("Failed to create skill %s: %v", s.name, err)
 		}
@@ -203,19 +203,129 @@ func TestDiscovery_DuplicateSkill(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	discovery := NewDiscovery(tempDir)
+	discovery := NewDiscovery(tempDir, nil)
 
 	// Create a skill
-	err = discovery.CreateSkill("Duplicate Test", "Description", "Content")
+	err = discovery.CreateSkill("Duplicate Test", "Description", "Content", false)
 	if err != nil {
 		t.Fatalf("Failed to create skill: %v", err)
 	}
 
 	// Try to create duplicate
-	err = discovery.CreateSkill("Duplicate Test", "Another description", "Another content")
+	err = discovery.CreateSkill("Duplicate Test", "Another description", "Another content", false)
 	if err == nil {
 		t.Fatal("Expected error when creating duplicate skill")
 	}
 
 	t.Logf("✓ Duplicate skill detection works correctly: %v", err)
+}
+
+func TestDiscovery_ImportSkillMd(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "skill_test_*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	discovery := NewDiscovery(tempDir, nil)
+	ctx := context.Background()
+
+	// Create a temporary Skill.md file
+	skillMdContent := `---
+name: "Imported Skill"
+description: "An imported skill"
+version: "1.0.0"
+---
+
+# Imported Skill
+
+## Description
+This skill was imported from a Skill.md file.
+`
+	tmpFile, err := os.CreateTemp("", "skill-*.md")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(skillMdContent); err != nil {
+		t.Fatalf("Failed to write skill content: %v", err)
+	}
+	tmpFile.Close()
+
+	// Import the skill
+	err = discovery.ImportSkill(tmpFile.Name(), false, "")
+	if err != nil {
+		t.Fatalf("Failed to import skill: %v", err)
+	}
+
+	// Verify skill was imported
+	skills, err := discovery.GetSkills(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get skills: %v", err)
+	}
+
+	if len(skills) != 1 {
+		t.Fatalf("Expected 1 skill, got %d", len(skills))
+	}
+
+	if skills[0].Name != "Imported Skill" {
+		t.Fatalf("Expected skill name 'Imported Skill', got '%s'", skills[0].Name)
+	}
+
+	t.Logf("✓ ImportSkill from Skill.md works correctly")
+}
+
+func TestDiscovery_ImportSkillWithScripts(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "skill_test_*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	discovery := NewDiscovery(tempDir, nil)
+	ctx := context.Background()
+
+	// Create a skill with scripts
+	err = discovery.CreateSkill("Skill With Scripts", "Skill with scripts", "## Content", true)
+	if err != nil {
+		t.Fatalf("Failed to create skill: %v", err)
+	}
+
+	// Add a script file
+	skillDir := filepath.Join(tempDir, "skill_with_scripts")
+	scriptsDir := filepath.Join(skillDir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+		t.Fatalf("Failed to create scripts dir: %v", err)
+	}
+
+	scriptContent := "#!/usr/bin/env python3\nprint('Hello')"
+	scriptPath := filepath.Join(scriptsDir, "hello.py")
+	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0644); err != nil {
+		t.Fatalf("Failed to write script: %v", err)
+	}
+
+	// Get skills and verify scripts are detected
+	skills, err := discovery.GetSkills(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get skills: %v", err)
+	}
+
+	if len(skills) != 1 {
+		t.Fatalf("Expected 1 skill, got %d", len(skills))
+	}
+
+	if !skills[0].HasScripts {
+		t.Fatal("Expected skill to have scripts")
+	}
+
+	if len(skills[0].Scripts) != 1 {
+		t.Fatalf("Expected 1 script, got %d", len(skills[0].Scripts))
+	}
+
+	if skills[0].Scripts[0].Name != "hello.py" {
+		t.Fatalf("Expected script name 'hello.py', got '%s'", skills[0].Scripts[0].Name)
+	}
+
+	t.Logf("✓ Skill with scripts detected correctly")
 }

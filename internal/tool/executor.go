@@ -86,7 +86,7 @@ func (e *Executor) GetTool(name string) (Tool, bool) {
 }
 
 // ExecuteWithStream executes a tool with the given arguments and streams output
-func (e *Executor) ExecuteWithStream(ctx context.Context, toolName string, args map[string]interface{}, callback StreamCallback) (*ToolResult, error) {
+func (e *Executor) ExecuteWithStream(ctx context.Context, toolName string, args map[string]interface{}, activeSkillPath string, callback StreamCallback) (*ToolResult, error) {
 	// Check if tool is disabled
 	if e.isToolDisabled(toolName) {
 		return &ToolResult{
@@ -97,6 +97,17 @@ func (e *Executor) ExecuteWithStream(ctx context.Context, toolName string, args 
 
 	// First check registered tools
 	if tool, ok := e.tools[toolName]; ok {
+		// For registered tools, inject skill_dir into args if not already present
+		if activeSkillPath != "" {
+			if _, hasSkillDir := args["workdir"]; !hasSkillDir {
+				// Create a copy to avoid modifying the original
+				args = make(map[string]interface{})
+				for k, v := range args {
+					args[k] = v
+				}
+				args["workdir"] = activeSkillPath
+			}
+		}
 		result, err := tool.Execute(ctx, args)
 		if err != nil {
 			return result, err

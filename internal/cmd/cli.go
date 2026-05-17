@@ -99,7 +99,7 @@ func runCLI(cmd *cobra.Command, args []string) error {
 			"/switch <id>    - Switch to a session",
 			"/delete <id>    - Delete a session",
 			"/current        - Show current session",
-			"/skill          - Skill management (list/show/create/edit/delete)",
+			"/skill          - Skill management (list/show/create/edit/delete/import)",
 		}))
 
 	// Main loop

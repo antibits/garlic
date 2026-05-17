@@ -15,6 +15,33 @@
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
+.header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.import-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  background: #2196F3;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.import-btn:hover {
+  background: #1976D2;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
+}
+
 .skill-manager-header h1 {
   margin: 0;
   font-size: 24px;
@@ -38,6 +65,9 @@
 }
 
 .create-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 10px 20px;
   background: #4CAF50;
   color: white;
@@ -457,6 +487,24 @@
   margin-top: 30px;
 }
 
+.import-file-info {
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+}
+
+.import-file-info p {
+  margin: 4px 0;
+  font-size: 14px;
+  color: #666;
+}
+
+.import-file-info strong {
+  color: #333;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .skill-manager-header {
@@ -469,9 +517,14 @@
     text-align: center;
   }
 
-  .skill-manager-header .back-btn,
-  .skill-manager-header .create-btn {
+  .header-actions {
     width: 100%;
+  }
+
+  .header-actions .back-btn,
+  .header-actions .create-btn,
+  .header-actions .import-btn {
+    flex: 1;
   }
 
   .skills-grid {

@@ -212,11 +212,22 @@ export const getSkill = async (name) => {
 }
 
 // 创建新 skill
-export const createSkill = async (name, description, content = '') => {
+export const createSkill = async (name, description, content = '', withScripts = false) => {
   const response = await api.post('/skills', {
     name,
     description,
-    content
+    content,
+    with_scripts: withScripts
+  })
+  return response.data
+}
+
+// 导入 skill
+export const importSkill = async (formData) => {
+  const response = await api.post('/skills/import', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
   })
   return response.data
 }
@@ -283,6 +294,7 @@ const apiService = {
   getSkills,
   getSkill,
   createSkill,
+  importSkill,
   updateSkill,
   deleteSkill,
   enableSkill,

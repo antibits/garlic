@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -308,7 +309,7 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 			var err error
 
 			// Use streaming analysis which will stream simple responses in real-time
-			routeAgentOutput, routeResult, usage, err = h.router.AnalyzeStream(ctx, currExecCtx.Conversation.GetMessages(), languageInstr, sendChunk)
+			routeAgentOutput, routeResult, usage, err = h.router.AnalyzeStream(ctx, currExecCtx.Conversation.GetMessages(), languageInstr, currExecCtx.ActiveSkillContent, sendChunk)
 			if err != nil {
 				return "", fmt.Errorf("analyze current request [%s] fail, error: %s", request, err.Error())
 			}
@@ -348,19 +349,17 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 				} else if len(execResult.ToolName) > 0 {
 					// Check if selected item is a skill
 					if execResult.IsSkill {
-						// Build skill message from the result
-						skillMsg := fmt.Sprintf("=== Skill: %s ===\n\n%s\n=== End of Skill ===", execResult.ToolName, execResult.SkillContent)
-
-						// Add skill as a hidden system message
-						currExecCtx.AddMessage("system", skillMsg, model.MessageTypeHidden)
+						// Save skill info to execution context for subsequent rounds
 						currExecCtx.ActiveSkill = execResult.ToolName
+						currExecCtx.ActiveSkillPath = execResult.SkillPath
+						currExecCtx.ActiveSkillContent = execResult.SkillContent
 						logger.Info("Skill activated", zap.String("skill", execResult.ToolName), zap.String("path", execResult.SkillPath))
 						// Continue the loop without executing a tool
 						request, requestMsgType = "Continue with the skill activated.", model.MessageTypeHidden
 						continue
 					} else {
 						// Execute tool with streaming output for better UX
-						toolResult, err = h.executor.ExecuteWithStream(ctx, execResult.ToolName, execResult.ToolArgs, _sendChunk)
+						toolResult, err = h.executor.ExecuteWithStream(ctx, execResult.ToolName, execResult.ToolArgs, currExecCtx.ActiveSkillPath, _sendChunk)
 						if err != nil && toolResult != nil && toolResult.Error == "" {
 							toolResult.Error = err.Error()
 						}
@@ -702,13 +701,29 @@ func (h *Harness) HandleSkillCommand(input string) string {
 
 	case "create":
 		if skillName == "" {
-			return "Error: skill name is required. Usage: /skill create <name> [description]"
+			return "Error: skill name is required. Usage: /skill create <name> [description] [--with-scripts]"
 		}
-		description := args
+		
+		// Parse arguments for --with-scripts flag
+		description := ""
+		withScripts := false
+		
+		if args != "" {
+			// Check for --with-scripts flag
+			if strings.Contains(args, "--with-scripts") {
+				withScripts = true
+				// Remove the flag from description
+				description = strings.ReplaceAll(args, "--with-scripts", "")
+				description = strings.TrimSpace(description)
+			} else {
+				description = args
+			}
+		}
+		
 		if description == "" {
 			description = fmt.Sprintf("Skill: %s", skillName)
 		}
-		return h.createSkill(ctx, skillName, description)
+		return h.createSkill(ctx, skillName, description, withScripts)
 
 	case "edit":
 		if skillName == "" {
@@ -722,8 +737,16 @@ func (h *Harness) HandleSkillCommand(input string) string {
 		}
 		return h.deleteSkill(ctx, skillName)
 
+	case "import":
+		if skillName == "" {
+			return "Error: file path is required. Usage: /skill import <file_path> [--zip]"
+		}
+
+		isZip := strings.Contains(args, "--zip")
+		return h.importSkill(ctx, skillName, isZip, "")
+
 	default:
-		return fmt.Sprintf("Unknown skill command: %s\nAvailable commands: list, show, create, edit, delete", command)
+		return fmt.Sprintf("Unknown skill command: %s\nAvailable commands: list, show, create, edit, delete, import", command)
 	}
 }
 
@@ -736,7 +759,13 @@ func (h *Harness) listSkills(ctx context.Context) string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Available skills (%d):\n\n", len(skills)))
 	for _, skill := range skills {
-		sb.WriteString(fmt.Sprintf("• %s\n  %s\n  Path: %s\n\n", skill.Name, skill.Description, skill.Path))
+		sb.WriteString(fmt.Sprintf("• %s\n  %s\n  Path: %s", skill.Name, skill.Description, skill.Path))
+		if skill.HasScripts {
+			sb.WriteString(fmt.Sprintf("\n  Scripts: %d script(s)", len(skill.Scripts)))
+		} else {
+			sb.WriteString("\n  Scripts: None")
+		}
+		sb.WriteString("\n\n")
 	}
 	return strings.TrimSpace(sb.String())
 }
@@ -779,6 +808,16 @@ func (h *Harness) showSkill(ctx context.Context, name string) string {
 		}
 	}
 
+	// Show scripts information
+	if skill.HasScripts {
+		sb.WriteString(fmt.Sprintf("\n**Scripts**: %d script(s) available\n", len(skill.Scripts)))
+		for _, script := range skill.Scripts {
+			sb.WriteString(fmt.Sprintf("- `%s` (%s)\n", script.Name, script.Path))
+		}
+	} else {
+		sb.WriteString("\n**Scripts**: None\n")
+	}
+
 	sb.WriteString(fmt.Sprintf("\n**Path**: %s\n\n", skill.SkillPath))
 	sb.WriteString("---\n\n")
 	sb.WriteString(skill.Content)
@@ -786,7 +825,7 @@ func (h *Harness) showSkill(ctx context.Context, name string) string {
 	return sb.String()
 }
 
-func (h *Harness) createSkill(ctx context.Context, name, description string) string {
+func (h *Harness) createSkill(ctx context.Context, name, description string, withScripts bool) string {
 	// Create skill with empty content template
 	content := fmt.Sprintf(`## 描述
 
@@ -799,11 +838,11 @@ func (h *Harness) createSkill(ctx context.Context, name, description string) str
 
 ## 工具使用流程
 
-### 步骤 1: 
+### 步骤 1:
 
 描述步骤...
 
-### 步骤 2: 
+### 步骤 2:
 
 描述步骤...
 
@@ -813,11 +852,17 @@ func (h *Harness) createSkill(ctx context.Context, name, description string) str
 2. 注意事项 2
 `, description)
 
-	if err := h.skillDiscovery.CreateSkill(name, description, content); err != nil {
+	if err := h.skillDiscovery.CreateSkill(name, description, content, withScripts); err != nil {
 		return fmt.Sprintf("Error creating skill: %v", err)
 	}
 
-	return fmt.Sprintf("Skill '%s' created successfully!\nYou can now use /skill show %s to view it, or /skill edit %s to modify it.", name, name, name)
+	msg := fmt.Sprintf("Skill '%s' created successfully!", name)
+	if withScripts {
+		msg += "\nScripts directory created. You can add scripts to: " + filepath.Join("skills", sanitizeDirName(name), "scripts")
+	}
+	msg += fmt.Sprintf("\nYou can now use /skill show %s to view it, or /skill edit %s to modify it.", name, name)
+	
+	return msg
 }
 
 func (h *Harness) editSkill(ctx context.Context, name, content string) string {
@@ -849,4 +894,35 @@ func (h *Harness) deleteSkill(ctx context.Context, name string) string {
 	}
 
 	return fmt.Sprintf("Skill '%s' deleted successfully!", name)
+}
+
+func (h *Harness) importSkill(ctx context.Context, filePath string, isZip bool, skillID string) string {
+	if err := h.skillDiscovery.ImportSkill(filePath, isZip, skillID); err != nil {
+		return fmt.Sprintf("Error importing skill: %v", err)
+	}
+
+	fileType := "Skill.md file"
+	if isZip {
+		fileType = "zip archive"
+	}
+
+	return fmt.Sprintf("Skill imported successfully from %s!\nYou can now use /skill list to see it, or /skill show <name> to view details.", fileType)
+}
+
+// sanitizeDirName converts a skill name to a valid directory name
+func sanitizeDirName(name string) string {
+	// Replace spaces and special characters with underscores
+	result := strings.ToLower(name)
+	result = strings.ReplaceAll(result, " ", "_")
+	result = strings.ReplaceAll(result, "-", "_")
+
+	// Keep alphanumeric, underscore, and non-ASCII characters (like Chinese)
+	var sanitized strings.Builder
+	for _, r := range result {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r >= 128 {
+			sanitized.WriteRune(r)
+		}
+	}
+
+	return sanitized.String()
 }
