@@ -367,16 +367,16 @@
 }
 
 .detail-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--border-color);
-  flex-wrap: wrap;
 }
 
 .btn {
-  padding: 6px 12px;
+  padding: 6px 8px;
   border: 1px solid var(--border-color);
   border-radius: 4px;
   font-size: 12px;
@@ -385,14 +385,15 @@
   transition: all 0.2s;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 4px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .btn-action {
-  flex: 0 1 auto;
   justify-content: center;
-  min-width: 80px;
 }
 
 .btn-enable {
