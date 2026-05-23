@@ -43,6 +43,54 @@ type ConversationCompressConfig struct {
 	Length   int  `yaml:"length"`
 }
 
+// SpladeConfig holds configuration for SPLADE vector model
+type SpladeConfig struct {
+	ModelName       string `yaml:"model_name"`
+	Source          string `yaml:"source"`           // modelscope or huggingface
+	CacheDir        string `yaml:"cache_dir"`
+	AutoDownload    bool   `yaml:"auto_download"`
+	DownloadTimeout int    `yaml:"download_timeout"` // seconds
+	VectorDim       int    `yaml:"vector_dim"`
+}
+
+// QdrantConfig holds configuration for Qdrant vector storage
+type QdrantConfig struct {
+	// Storage backend: "local" or "qdrant"
+	StorageBackend string `yaml:"storage_backend"`
+
+	// Local file storage path (used when storage_backend is "local")
+	StoragePath string `yaml:"storage_path"`
+
+	// Qdrant connection settings (used when storage_backend is "qdrant")
+	Host      string `yaml:"host"`
+	Port      int    `yaml:"port"`
+	APIKey    string `yaml:"api_key,omitempty"`
+	EnableTLS bool   `yaml:"enable_tls"`
+
+	// Common settings
+	CollectionName      string  `yaml:"collection_name"`
+	Distance            string  `yaml:"distance"` // Cosine, Euclidean, Dot
+	MaxMemories         int     `yaml:"max_memories"`
+	TopK                int     `yaml:"top_k"`
+	SimilarityThreshold float64 `yaml:"similarity_threshold"`
+}
+
+// MemoryStorageConfig holds configuration for memory metadata storage
+type MemoryStorageConfig struct {
+	MetadataDir string `yaml:"metadata_dir"`
+	AutoImport  bool   `yaml:"auto_import"`
+}
+
+// MemoryConfig holds configuration for the memory system
+type MemoryConfig struct {
+	Enabled          bool                `yaml:"enabled"`
+	Splade           SpladeConfig        `yaml:"splade"`
+	Qdrant           QdrantConfig        `yaml:"qdrant"`
+	Storage          MemoryStorageConfig `yaml:"storage"`
+	CleanupInterval  int                 `yaml:"cleanup_interval"`   // Cleanup interval in days, 0 means disable
+	MaxInactiveDays  int                 `yaml:"max_inactive_days"`  // Delete memories not accessed for this many days
+}
+
 // Config holds the entire application configuration
 type Config struct {
 	Models        map[string]ModelConfig            `yaml:"models"`
@@ -52,9 +100,10 @@ type Config struct {
 		ToolsDir   string `yaml:"tools_dir"`
 		SkillsDir  string `yaml:"skills_dir"`
 	} `yaml:"tools"`
-	ToolGenerator ToolGeneratorConfig `yaml:"tool_generator,omitempty"`
-	ConvCompress  ConversationCompressConfig `yaml:"conversation_compress"`
-	DisabledTools []string `yaml:"disabled_tools,omitempty"`
+	ToolGenerator  ToolGeneratorConfig `yaml:"tool_generator,omitempty"`
+	ConvCompress   ConversationCompressConfig `yaml:"conversation_compress"`
+	Memory         MemoryConfig `yaml:"memory"`
+	DisabledTools  []string `yaml:"disabled_tools,omitempty"`
 	DisabledSkills []string `yaml:"disabled_skills,omitempty"`
 }
 
@@ -85,6 +134,56 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.ConvCompress.Length <= 0 {
 		cfg.ConvCompress.Length = 2048
+	}
+
+	// Set memory defaults
+	if cfg.Memory.Splade.ModelName == "" {
+		cfg.Memory.Splade.ModelName = "naver/splade-v3"
+	}
+	if cfg.Memory.Splade.Source == "" {
+		cfg.Memory.Splade.Source = "modelscope"
+	}
+	if cfg.Memory.Splade.CacheDir == "" {
+		cfg.Memory.Splade.CacheDir = ".splade_models"
+	}
+	if cfg.Memory.Splade.VectorDim <= 0 {
+		cfg.Memory.Splade.VectorDim = 30522
+	}
+	if cfg.Memory.Qdrant.StorageBackend == "" {
+		cfg.Memory.Qdrant.StorageBackend = "local"
+	}
+	if cfg.Memory.Qdrant.StoragePath == "" {
+		cfg.Memory.Qdrant.StoragePath = ".qdrant_data"
+	}
+	if cfg.Memory.Qdrant.Host == "" {
+		cfg.Memory.Qdrant.Host = "localhost"
+	}
+	if cfg.Memory.Qdrant.Port == 0 {
+		cfg.Memory.Qdrant.Port = 6334
+	}
+	if cfg.Memory.Qdrant.CollectionName == "" {
+		cfg.Memory.Qdrant.CollectionName = "garlic_memories"
+	}
+	if cfg.Memory.Qdrant.Distance == "" {
+		cfg.Memory.Qdrant.Distance = "Cosine"
+	}
+	if cfg.Memory.Qdrant.MaxMemories <= 0 {
+		cfg.Memory.Qdrant.MaxMemories = 10000
+	}
+	if cfg.Memory.Qdrant.TopK <= 0 {
+		cfg.Memory.Qdrant.TopK = 5
+	}
+	if cfg.Memory.Qdrant.SimilarityThreshold <= 0 {
+		cfg.Memory.Qdrant.SimilarityThreshold = 0.1
+	}
+	if cfg.Memory.Storage.MetadataDir == "" {
+		cfg.Memory.Storage.MetadataDir = ".memory_metadata"
+	}
+	if cfg.Memory.CleanupInterval <= 0 {
+		cfg.Memory.CleanupInterval = 1 // Default: cleanup every day
+	}
+	if cfg.Memory.MaxInactiveDays <= 0 {
+		cfg.Memory.MaxInactiveDays = 15 // Default: delete memories not accessed for 15 days
 	}
 
 	// Set model defaults

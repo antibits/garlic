@@ -169,6 +169,50 @@
       "length": "Compression Length",
       "roundHint": "Number of conversation rounds before compression starts",
       "lengthHint": "Target length after compression (tokens)"
+    },
+    "memory": {
+      "title": "Memory System",
+      "description": "Configure AI Agent's long-term memory system, supporting local storage and Qdrant vector database",
+      "enable": "Enable Memory System",
+      "storageBackend": "Storage Backend",
+      "storageBackendLocal": "Local File",
+      "storageBackendQdrant": "Qdrant Service",
+      "storagePath": "Local Storage Path",
+      "storagePathHint": "Data save path when using local storage",
+      "host": "Qdrant Host",
+      "port": "Qdrant Port",
+      "apiKey": "API Key",
+      "apiKeyHint": "Qdrant API key (optional)",
+      "enableTls": "Enable TLS",
+      "collectionName": "Collection Name",
+      "distance": "Distance Metric",
+      "maxMemories": "Max Memories",
+      "topK": "Search Results",
+      "similarityThreshold": "Similarity Threshold",
+      "thresholdHint": "Between 0-1, results below this value will be filtered",
+      "splade": {
+        "title": "SPLADE Vector Model",
+        "modelName": "Model Name",
+        "source": "Model Source",
+        "modelscope": "ModelScope",
+        "huggingface": "Hugging Face",
+        "cacheDir": "Cache Directory",
+        "autoDownload": "Auto Download Model",
+        "downloadTimeout": "Download Timeout (seconds)",
+        "vectorDim": "Vector Dimension"
+      },
+      "storage": {
+        "title": "Metadata Storage",
+        "metadataDir": "Metadata Directory",
+        "autoImport": "Auto Import Existing Memories"
+      },
+      "cleanup": {
+        "title": "Memory Cleanup",
+        "interval": "Cleanup Interval (days)",
+        "intervalHint": "0 means no automatic cleanup",
+        "maxInactiveDays": "Max Inactive Days",
+        "maxInactiveDaysHint": "Memories not accessed for this many days will be deleted"
+      }
     }
   },
   "theme": {

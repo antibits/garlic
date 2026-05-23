@@ -794,3 +794,13 @@
     margin-bottom: 12px;
   }
 }
+
+/* Form Section Title */
+.form-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #333);
+  margin: 16px 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
+}

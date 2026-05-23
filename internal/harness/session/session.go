@@ -2,6 +2,7 @@ package session
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -36,6 +37,7 @@ type SessionInput struct {
 	Result    chan<- string
 	Error     chan<- error
 	StreamCtx *StreamContext
+	Cancel    context.CancelFunc // 用于取消当前请求的上下文
 }
 
 // StreamChunk represents a chunk of streaming content with message type
@@ -64,6 +66,7 @@ type Session struct {
 	metaPath       string // Path to meta.json
 	messagesPath   string // Path to messages.jsonl
 	mu             sync.Mutex
+	currentCancel  context.CancelFunc // 当前正在处理的请求的取消函数
 }
 
 // NewSession creates a new session
@@ -84,6 +87,23 @@ func NewSession(id, name string) *Session {
 // GetInputChan returns the input channel
 func (s *Session) GetInputChan() chan SessionInput {
 	return s.inputChan
+}
+
+// SetCurrentCancel 设置当前正在处理的请求的取消函数
+func (s *Session) SetCurrentCancel(cancel context.CancelFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.currentCancel = cancel
+}
+
+// CancelCurrentRequest 取消当前正在处理的请求
+func (s *Session) CancelCurrentRequest() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.currentCancel != nil {
+		s.currentCancel()
+		s.currentCancel = nil
+	}
 }
 
 // PersistAppendMessages appends a single message to the messages.jsonl file

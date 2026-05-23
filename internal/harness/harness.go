@@ -8,10 +8,12 @@ import (
 	"time"
 
 	"github.com/antibits/garlic/internal/agents"
+	"github.com/antibits/garlic/internal/config"
 	"github.com/antibits/garlic/internal/harness/model"
 	"github.com/antibits/garlic/internal/harness/session"
 	"github.com/antibits/garlic/internal/llm"
 	"github.com/antibits/garlic/internal/logger"
+	"github.com/antibits/garlic/internal/memory"
 	"github.com/antibits/garlic/internal/skill"
 	"github.com/antibits/garlic/internal/tool"
 
@@ -32,6 +34,7 @@ type Harness struct {
 	executorAgent  *agents.ExecutorAgent
 	executor       *tool.Executor
 	skillDiscovery *skill.Discovery
+	memory         *memory.Manager
 	ctx            context.Context
 	cancel         context.CancelFunc
 }
@@ -47,6 +50,8 @@ type Config struct {
 	ConvCompressDisabled bool
 	ConvCompressRound    int
 	ConvCompressLength   int
+	MemoryEnabled        bool
+	MemoryConfig         *config.MemoryConfig
 }
 
 // AgentClients holds LLM clients for different agent roles
@@ -87,6 +92,24 @@ func NewHarness(cfg *Config, clients AgentClients) *Harness {
 		skillDiscovery: skillDiscovery,
 		ctx:            ctx,
 		cancel:         cancel,
+	}
+
+	// Initialize memory system if enabled
+	if cfg.MemoryEnabled && cfg.MemoryConfig != nil {
+		var err error
+		harness.memory, err = memory.NewManager(*cfg.MemoryConfig, cfg.PythonPath)
+		if err != nil {
+			logger.Warn("Failed to create memory manager", zap.Error(err))
+			harness.memory = nil
+		} else if err := harness.memory.Initialize(ctx); err != nil {
+			logger.Warn("Failed to initialize memory system", zap.Error(err))
+			harness.memory = nil
+		} else {
+			logger.Info("Memory system initialized")
+
+			// Start memory cleanup scheduler
+			harness.startMemoryCleanupScheduler(ctx, cfg.MemoryConfig.CleanupInterval, cfg.MemoryConfig.MaxInactiveDays)
+		}
 	}
 
 	// Register built-in tools to executor's ToolDiscovery
@@ -149,6 +172,152 @@ func (h *Harness) Close() {
 	}
 }
 
+// extractMemoriesFromConversation saves conversation content directly to memory
+func (h *Harness) extractMemoriesFromConversation(ctx context.Context, sess *session.Session, messages []model.Message) {
+	if len(messages) < 2 {
+		return // Need at least user + assistant messages
+	}
+
+	// Group messages by role
+	var userMessages, assistantMessages []string
+	for _, msg := range messages {
+		if msg.Type == model.MessageTypeHidden {
+			continue // Skip hidden messages
+		}
+
+		switch msg.Role {
+		case "user":
+			userMessages = append(userMessages, msg.Content)
+		case "assistant":
+			assistantMessages = append(assistantMessages, msg.Content)
+		}
+	}
+
+	// Save user messages as user-type memory
+	if len(userMessages) > 0 {
+		userContent := strings.Join(userMessages, "\n\n")
+		m := &memory.Memory{
+			Name:        fmt.Sprintf("Conversation user messages %s", time.Now().Format("2006-01-02 15:04")),
+			Description: "User messages from conversation",
+			Type:        memory.TypeUser,
+			Content:     userContent,
+			Tags:        []string{"conversation", "user"},
+		}
+
+		if err := h.memory.SaveMemory(ctx, m); err != nil {
+			logger.Warn("Failed to save user memory", zap.Error(err))
+		} else {
+			logger.Info("Saved user conversation memory", zap.Int("messages", len(userMessages)))
+		}
+	}
+
+	// Save assistant messages as project-type memory
+	if len(assistantMessages) > 0 {
+		assistantContent := strings.Join(assistantMessages, "\n\n")
+		m := &memory.Memory{
+			Name:        fmt.Sprintf("Conversation assistant messages %s", time.Now().Format("2006-01-02 15:04")),
+			Description: "Assistant responses from conversation",
+			Type:        memory.TypeProject,
+			Content:     assistantContent,
+			Tags:        []string{"conversation", "assistant"},
+		}
+
+		if err := h.memory.SaveMemory(ctx, m); err != nil {
+			logger.Warn("Failed to save assistant memory", zap.Error(err))
+		} else {
+			logger.Info("Saved assistant conversation memory", zap.Int("messages", len(assistantMessages)))
+		}
+	}
+}
+
+// buildMemoryContext formats recalled memories into a context string
+func (h *Harness) buildMemoryContext(memories []*memory.Memory) string {
+	var sb strings.Builder
+	sb.WriteString("## Recalled Memories\n")
+	sb.WriteString("The following are relevant memory contents from previous conversations:\n\n")
+
+	for i, mem := range memories {
+		sb.WriteString(fmt.Sprintf("%d. [Memory - Role: %s]\n", i+1, mem.Type))
+		sb.WriteString(fmt.Sprintf("   %s\n", mem.Content))
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("Please use these memories to provide more accurate and personalized responses.\n")
+	return sb.String()
+}
+
+// startMemoryCleanupScheduler starts a background goroutine to periodically cleanup expired memories
+func (h *Harness) startMemoryCleanupScheduler(ctx context.Context, intervalDays int, maxInactiveDays int) {
+	if intervalDays <= 0 || maxInactiveDays <= 0 {
+		logger.Info("Memory cleanup scheduler disabled (interval or max_inactive_days is 0)")
+		return
+	}
+
+	go func() {
+		// Run cleanup immediately on startup
+		if err := h.memory.CleanupExpiredMemories(ctx, maxInactiveDays); err != nil {
+			logger.Warn("Memory cleanup on startup failed", zap.Error(err))
+		}
+
+		// Schedule periodic cleanup
+		ticker := time.NewTicker(time.Duration(intervalDays) * 24 * time.Hour)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				logger.Info("Memory cleanup scheduler stopped")
+				return
+			case <-ticker.C:
+				logger.Info("Running scheduled memory cleanup")
+				if err := h.memory.CleanupExpiredMemories(ctx, maxInactiveDays); err != nil {
+					logger.Warn("Scheduled memory cleanup failed", zap.Error(err))
+				}
+			}
+		}
+	}()
+
+	logger.Info("Memory cleanup scheduler started",
+		zap.Int("interval_days", intervalDays),
+		zap.Int("max_inactive_days", maxInactiveDays),
+	)
+}
+
+// ListMemories returns a list of all memories
+func (h *Harness) ListMemories(ctx context.Context, filterType string, limit int) ([]*memory.Memory, error) {
+	if h.memory == nil {
+		return nil, fmt.Errorf("memory system is not initialized")
+	}
+	
+	var memType memory.MemoryType
+	if filterType != "" {
+		memType = memory.MemoryType(filterType)
+	}
+	
+	return h.memory.ListMemories(ctx, memType, limit)
+}
+
+// ClearMemories deletes all memories
+func (h *Harness) ClearMemories(ctx context.Context) error {
+	if h.memory == nil {
+		return fmt.Errorf("memory system is not initialized")
+	}
+	
+	memories, err := h.memory.ListMemories(ctx, "", 0)
+	if err != nil {
+		return fmt.Errorf("failed to list memories: %w", err)
+	}
+	
+	for _, mem := range memories {
+		if err := h.memory.DeleteMemory(ctx, mem.ID); err != nil {
+			logger.Warn("Failed to delete memory", zap.String("id", mem.ID), zap.Error(err))
+		}
+	}
+	
+	logger.Info("All memories cleared", zap.Int("count", len(memories)))
+	return nil
+}
+
 // registerBuiltinTools registers built-in Go tools to the executor
 func (h *Harness) registerBuiltinTools() {
 	freader := &tool.FileReaderTool{}
@@ -192,8 +361,17 @@ func (h *Harness) sessionWorker(ctx context.Context, s *session.Session) {
 		case <-ctx.Done():
 			return
 		case input := <-s.GetInputChan():
+			// 创建可取消的上下文用于当前请求
+			reqCtx, cancel := context.WithCancel(ctx)
+			// 设置取消函数到 session，以便可以通过 API 取消
+			s.SetCurrentCancel(cancel)
+			
 			// Process the request with optional streaming
-			result, err := h.processRequestForSession(ctx, s, input.Request, input.StreamCtx)
+			result, err := h.processRequestForSession(reqCtx, s, input.Request, input.StreamCtx)
+			
+			// 清除取消函数
+			s.SetCurrentCancel(nil)
+			
 			if err != nil {
 				input.Error <- err
 			} else {
@@ -242,6 +420,26 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 
 	var currExecCtx *model.ExecutionContext
 	var rewriteRequest bool
+
+	// Step 1: Retrieve relevant memories before processing request (initial search)
+	var recalledMemories []*memory.Memory
+	if h.memory != nil {
+		memories, err := h.memory.SearchMemories(ctx, request, 5, "")
+		if err != nil {
+			logger.Warn("Failed to search memories", zap.Error(err))
+		} else if len(memories) > 0 {
+			logger.Info("Retrieved relevant memories", zap.Int("count", len(memories)))
+			for _, mem := range memories {
+				logger.Debug("Relevant memory",
+					zap.String("id", mem.Memory.ID),
+					zap.String("type", string(mem.Memory.Type)),
+					zap.String("name", mem.Memory.Name),
+					zap.Float64("score", mem.Score),
+				)
+				recalledMemories = append(recalledMemories, mem.Memory)
+			}
+		}
+	}
 	// Rewrite request to be self-contained based on conversation history
 	rawRequest := request
 	if h.rewriter != nil && !h.config.ConvCompressDisabled && histMsgCount > h.config.ConvCompressRound && len([]rune(session.Conversation.GetText())) >= h.config.ConvCompressLength {
@@ -315,6 +513,42 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 			}
 			if usage != nil {
 				session.AddTokenUsage(usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
+			}
+
+			// Step 2: If router indicates need for memory, perform targeted memory recall
+			if routeResult.NeedMemory && h.memory != nil && len(routeResult.MemoryQueries) > 0 {
+				logger.Info("Router requested memory recall", zap.Strings("queries", routeResult.MemoryQueries))
+				for _, query := range routeResult.MemoryQueries {
+					memories, err := h.memory.SearchMemories(ctx, query, 3, "")
+					if err != nil {
+						logger.Warn("Failed to search memory by router query", zap.String("query", query), zap.Error(err))
+						continue
+					}
+					// Add new memories to recalled list (avoid duplicates)
+					existingIDs := make(map[string]bool)
+					for _, m := range recalledMemories {
+						existingIDs[m.ID] = true
+					}
+					for _, mem := range memories {
+						if !existingIDs[mem.Memory.ID] {
+							recalledMemories = append(recalledMemories, mem.Memory)
+							existingIDs[mem.Memory.ID] = true
+							logger.Debug("Additional memory recalled by router",
+								zap.String("query", query),
+								zap.String("id", mem.Memory.ID),
+								zap.String("name", mem.Memory.Name),
+							)
+						}
+					}
+				}
+			}
+
+			// Inject recalled memories into execution context if any
+			if len(recalledMemories) > 0 && currExecCtx != nil {
+				memoryContext := h.buildMemoryContext(recalledMemories)
+				// Add as a hidden system message to provide context
+				currExecCtx.AddMessage("system", memoryContext, model.MessageTypeHidden)
+				logger.Info("Injected recalled memories into conversation", zap.Int("count", len(recalledMemories)))
 			}
 
 			switch routeResult.Intent {
@@ -462,6 +696,13 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 	}
 
 	finalAssistMsg := currExecCtx.FinalAssistantMsg()
+
+	// Save important information to memory after request processing
+	if h.memory != nil && finalAssistMsg.Content != "" {
+		// Use LLM to extract memory-worthy information from the conversation
+		h.extractMemoriesFromConversation(ctx, session, currExecCtx.Conversation.GetMessages())
+	}
+
 	return finalAssistMsg.Content, nil
 }
 
@@ -703,11 +944,11 @@ func (h *Harness) HandleSkillCommand(input string) string {
 		if skillName == "" {
 			return "Error: skill name is required. Usage: /skill create <name> [description] [--with-scripts]"
 		}
-		
+
 		// Parse arguments for --with-scripts flag
 		description := ""
 		withScripts := false
-		
+
 		if args != "" {
 			// Check for --with-scripts flag
 			if strings.Contains(args, "--with-scripts") {
@@ -719,7 +960,7 @@ func (h *Harness) HandleSkillCommand(input string) string {
 				description = args
 			}
 		}
-		
+
 		if description == "" {
 			description = fmt.Sprintf("Skill: %s", skillName)
 		}
@@ -861,7 +1102,7 @@ func (h *Harness) createSkill(ctx context.Context, name, description string, wit
 		msg += "\nScripts directory created. You can add scripts to: " + filepath.Join("skills", sanitizeDirName(name), "scripts")
 	}
 	msg += fmt.Sprintf("\nYou can now use /skill show %s to view it, or /skill edit %s to modify it.", name, name)
-	
+
 	return msg
 }
 

@@ -169,6 +169,50 @@
       "length": "压缩长度",
       "roundHint": "超过多少轮对话后开始压缩",
       "lengthHint": "压缩后的目标长度 (tokens)"
+    },
+    "memory": {
+      "title": "记忆系统",
+      "description": "配置 AI Agent 的长期记忆系统，支持本地存储和 Qdrant 向量数据库",
+      "enable": "启用记忆系统",
+      "storageBackend": "存储后端",
+      "storageBackendLocal": "本地文件",
+      "storageBackendQdrant": "Qdrant 服务",
+      "storagePath": "本地存储路径",
+      "storagePathHint": "当使用本地存储时的数据保存路径",
+      "host": "Qdrant 主机",
+      "port": "Qdrant 端口",
+      "apiKey": "API 密钥",
+      "apiKeyHint": "Qdrant API 密钥（可选）",
+      "enableTls": "启用 TLS",
+      "collectionName": "集合名称",
+      "distance": "距离度量",
+      "maxMemories": "最大记忆数",
+      "topK": "搜索结果数",
+      "similarityThreshold": "相似度阈值",
+      "thresholdHint": "0-1 之间，低于此值的结果将被过滤",
+      "splade": {
+        "title": "SPLADE 向量模型",
+        "modelName": "模型名称",
+        "source": "模型来源",
+        "modelscope": "ModelScope",
+        "huggingface": "Hugging Face",
+        "cacheDir": "缓存目录",
+        "autoDownload": "自动下载模型",
+        "downloadTimeout": "下载超时（秒）",
+        "vectorDim": "向量维度"
+      },
+      "storage": {
+        "title": "元数据存储",
+        "metadataDir": "元数据目录",
+        "autoImport": "自动导入现有记忆"
+      },
+      "cleanup": {
+        "title": "记忆清理",
+        "interval": "清理间隔（天）",
+        "intervalHint": "0 表示不自动清理",
+        "maxInactiveDays": "最大非活跃天数",
+        "maxInactiveDaysHint": "超过此天数未访问的记忆将被删除"
+      }
     }
   },
   "theme": {

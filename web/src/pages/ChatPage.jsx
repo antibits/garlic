@@ -340,10 +340,27 @@ const ChatPage = ({ onOpenSettings }) => {
   }, [])
 
   // 停止生成
-  const handleStopGenerating = useCallback((sessionId) => {
-    disconnectWebSocket(sessionId)
-    setTimeout(() => connectWebSocket(sessionId), 1000)
-  }, [disconnectWebSocket, connectWebSocket])
+  const handleStopGenerating = useCallback(async (sessionId) => {
+    try {
+      // 调用后端停止 API
+      await api.stopSession(sessionId)
+      console.log('Session request cancelled:', sessionId)
+      
+      // 更新前端状态
+      const state = sessionStatesRef.current[sessionId]
+      if (state) {
+        // 将正在流式传输的消息标记为非流式
+        state.messages = state.messages.map(msg =>
+          msg.streaming ? { ...msg, streaming: false } : msg
+        )
+        state.loading = false
+        state.streamingMessageId = null
+        forceUpdate(n => n + 1)
+      }
+    } catch (error) {
+      console.error('Failed to stop session:', error)
+    }
+  }, [])
 
   // 处理会话选择 - 关键改进：只切换显示，不断开连接
   const handleSelectSession = useCallback((sessionId) => {

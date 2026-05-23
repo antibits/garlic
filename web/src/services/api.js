@@ -59,6 +59,12 @@ export const switchSession = async (sessionId) => {
   return response.data
 }
 
+// 停止会话中正在进行的请求
+export const stopSession = async (sessionId) => {
+  const response = await api.post(`/sessions/${sessionId}/stop`)
+  return response.data
+}
+
 // ==================== 消息 API ====================
 
 // 发送消息（HTTP 非流式）
@@ -270,6 +276,7 @@ const apiService = {
   deleteSession,
   updateSession,
   switchSession,
+  stopSession,
   // 消息
   sendMessage,
   createWebSocketConnection,

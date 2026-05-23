@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { createPortal } from 'react-dom'
-import { X, Save, RotateCcw, Plus, Trash2, Settings, Cpu, Hammer, Layers, Database, ChevronDown, ChevronUp } from 'lucide-react'
+import { X, Save, RotateCcw, Plus, Trash2, Settings, Cpu, Hammer, Layers, Database, ChevronDown, ChevronUp, Brain } from 'lucide-react'
 
 const SettingsModal = ({ isOpen, onClose, onSave }) => {
   const { t } = useTranslation()
@@ -21,6 +21,36 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
       disabled: false,
       round: 20,
       length: 2048
+    },
+    memory: {
+      enabled: false,
+      splade: {
+        model_name: 'naver/splade-v3',
+        source: 'modelscope',
+        cache_dir: '.splade_models',
+        auto_download: true,
+        download_timeout: 300,
+        vector_dim: 30522
+      },
+      qdrant: {
+        storage_backend: 'local',
+        storage_path: '.memory_vectors',
+        host: 'localhost',
+        port: 6334,
+        api_key: '',
+        enable_tls: false,
+        collection_name: 'garlic_memories',
+        distance: 'Cosine',
+        max_memories: 10000,
+        top_k: 5,
+        similarity_threshold: 0.1
+      },
+      storage: {
+        metadata_dir: '.memory_metadata',
+        auto_import: true
+      },
+      cleanup_interval: 1,
+      max_inactive_days: 15
     }
   })
 
@@ -113,6 +143,59 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
       conversation_compress: {
         ...prev.conversation_compress,
         [field]: value
+      }
+    }))
+    setHasChanges(true)
+  }
+
+  const handleMemoryChange = (field, value) => {
+    setConfig(prev => ({
+      ...prev,
+      memory: {
+        ...prev.memory,
+        [field]: value
+      }
+    }))
+    setHasChanges(true)
+  }
+
+  const handleSpladeChange = (field, value) => {
+    setConfig(prev => ({
+      ...prev,
+      memory: {
+        ...prev.memory,
+        splade: {
+          ...prev.memory.splade,
+          [field]: value
+        }
+      }
+    }))
+    setHasChanges(true)
+  }
+
+  const handleQdrantChange = (field, value) => {
+    setConfig(prev => ({
+      ...prev,
+      memory: {
+        ...prev.memory,
+        qdrant: {
+          ...prev.memory.qdrant,
+          [field]: value
+        }
+      }
+    }))
+    setHasChanges(true)
+  }
+
+  const handleMemoryStorageChange = (field, value) => {
+    setConfig(prev => ({
+      ...prev,
+      memory: {
+        ...prev.memory,
+        storage: {
+          ...prev.memory.storage,
+          [field]: value
+        }
       }
     }))
     setHasChanges(true)
@@ -488,6 +571,255 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
                       <p className="hint">{t('settings.compress.lengthHint')}</p>
                     </div>
                   </div>
+                )}
+              </div>
+
+              {/* Memory 配置 */}
+              <div className="settings-section">
+                <div className="section-header">
+                  <Brain size={18} />
+                  <h3>{t('settings.memory.title')}</h3>
+                </div>
+                <p className="section-desc">{t('settings.memory.description')}</p>
+
+                <div className="form-row">
+                  <div className="form-group checkbox-group">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={config.memory.enabled}
+                        onChange={(e) => handleMemoryChange('enabled', e.target.checked)}
+                      />
+                      {t('settings.memory.enable')}
+                    </label>
+                  </div>
+                </div>
+
+                {config.memory.enabled && (
+                  <>
+                    {/* 存储后端选择 */}
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>{t('settings.memory.storageBackend')}</label>
+                        <select
+                          value={config.memory.qdrant.storage_backend}
+                          onChange={(e) => handleQdrantChange('storage_backend', e.target.value)}
+                        >
+                          <option value="local">{t('settings.memory.storageBackendLocal')}</option>
+                          <option value="qdrant">{t('settings.memory.storageBackendQdrant')}</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* 本地存储配置 */}
+                    {config.memory.qdrant.storage_backend === 'local' && (
+                      <div className="form-row">
+                        <div className="form-group">
+                          <label>{t('settings.memory.storagePath')}</label>
+                          <input
+                            type="text"
+                            value={config.memory.qdrant.storage_path}
+                            onChange={(e) => handleQdrantChange('storage_path', e.target.value)}
+                            placeholder=".memory_vectors"
+                          />
+                          <p className="hint">{t('settings.memory.storagePathHint')}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Qdrant 配置 */}
+                    {config.memory.qdrant.storage_backend === 'qdrant' && (
+                      <div className="form-row">
+                        <div className="form-group">
+                          <label>{t('settings.memory.host')}</label>
+                          <input
+                            type="text"
+                            value={config.memory.qdrant.host}
+                            onChange={(e) => handleQdrantChange('host', e.target.value)}
+                            placeholder="localhost"
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>{t('settings.memory.port')}</label>
+                          <input
+                            type="number"
+                            value={config.memory.qdrant.port}
+                            onChange={(e) => handleQdrantChange('port', parseInt(e.target.value))}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 通用 Qdrant 配置 */}
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>{t('settings.memory.collectionName')}</label>
+                        <input
+                          type="text"
+                          value={config.memory.qdrant.collection_name}
+                          onChange={(e) => handleQdrantChange('collection_name', e.target.value)}
+                          placeholder="garlic_memories"
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('settings.memory.distance')}</label>
+                        <select
+                          value={config.memory.qdrant.distance}
+                          onChange={(e) => handleQdrantChange('distance', e.target.value)}
+                        >
+                          <option value="Cosine">Cosine</option>
+                          <option value="Euclidean">Euclidean</option>
+                          <option value="Dot">Dot Product</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>{t('settings.memory.maxMemories')}</label>
+                        <input
+                          type="number"
+                          value={config.memory.qdrant.max_memories}
+                          onChange={(e) => handleQdrantChange('max_memories', parseInt(e.target.value))}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('settings.memory.topK')}</label>
+                        <input
+                          type="number"
+                          value={config.memory.qdrant.top_k}
+                          onChange={(e) => handleQdrantChange('top_k', parseInt(e.target.value))}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('settings.memory.similarityThreshold')}</label>
+                        <div className="range-input">
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.05"
+                            value={config.memory.qdrant.similarity_threshold}
+                            onChange={(e) => handleQdrantChange('similarity_threshold', parseFloat(e.target.value))}
+                          />
+                          <span className="range-value">{config.memory.qdrant.similarity_threshold}</span>
+                        </div>
+                        <p className="hint">{t('settings.memory.thresholdHint')}</p>
+                      </div>
+                    </div>
+
+                    {/* SPLADE 配置 */}
+                    <div className="form-section-title">{t('settings.memory.splade.title')}</div>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>{t('settings.memory.splade.modelName')}</label>
+                        <input
+                          type="text"
+                          value={config.memory.splade.model_name}
+                          onChange={(e) => handleSpladeChange('model_name', e.target.value)}
+                          placeholder="naver/splade-v3"
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('settings.memory.splade.source')}</label>
+                        <select
+                          value={config.memory.splade.source}
+                          onChange={(e) => handleSpladeChange('source', e.target.value)}
+                        >
+                          <option value="modelscope">{t('settings.memory.splade.modelscope')}</option>
+                          <option value="huggingface">{t('settings.memory.splade.huggingface')}</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>{t('settings.memory.splade.cacheDir')}</label>
+                        <input
+                          type="text"
+                          value={config.memory.splade.cache_dir}
+                          onChange={(e) => handleSpladeChange('cache_dir', e.target.value)}
+                          placeholder=".splade_models"
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('settings.memory.splade.vectorDim')}</label>
+                        <input
+                          type="number"
+                          value={config.memory.splade.vector_dim}
+                          onChange={(e) => handleSpladeChange('vector_dim', parseInt(e.target.value))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="form-row">
+                      <div className="form-group checkbox-group">
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={config.memory.splade.auto_download}
+                            onChange={(e) => handleSpladeChange('auto_download', e.target.checked)}
+                          />
+                          {t('settings.memory.splade.autoDownload')}
+                        </label>
+                      </div>
+                      <div className="form-group">
+                        <label>{t('settings.memory.splade.downloadTimeout')}</label>
+                        <input
+                          type="number"
+                          value={config.memory.splade.download_timeout}
+                          onChange={(e) => handleSpladeChange('download_timeout', parseInt(e.target.value))}
+                        />
+                      </div>
+                    </div>
+
+                    {/* 元数据存储配置 */}
+                    <div className="form-section-title">{t('settings.memory.storage.title')}</div>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>{t('settings.memory.storage.metadataDir')}</label>
+                        <input
+                          type="text"
+                          value={config.memory.storage.metadata_dir}
+                          onChange={(e) => handleMemoryStorageChange('metadata_dir', e.target.value)}
+                          placeholder=".memory_metadata"
+                        />
+                      </div>
+                      <div className="form-group checkbox-group">
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={config.memory.storage.auto_import}
+                            onChange={(e) => handleMemoryStorageChange('auto_import', e.target.checked)}
+                          />
+                          {t('settings.memory.storage.autoImport')}
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* 记忆清理配置 */}
+                    <div className="form-section-title">{t('settings.memory.cleanup.title')}</div>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>{t('settings.memory.cleanup.interval')}</label>
+                        <input
+                          type="number"
+                          value={config.memory.cleanup_interval}
+                          onChange={(e) => handleMemoryChange('cleanup_interval', parseInt(e.target.value))}
+                        />
+                        <p className="hint">{t('settings.memory.cleanup.intervalHint')}</p>
+                      </div>
+                      <div className="form-group">
+                        <label>{t('settings.memory.cleanup.maxInactiveDays')}</label>
+                        <input
+                          type="number"
+                          value={config.memory.max_inactive_days}
+                          onChange={(e) => handleMemoryChange('max_inactive_days', parseInt(e.target.value))}
+                        />
+                        <p className="hint">{t('settings.memory.cleanup.maxInactiveDaysHint')}</p>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
             </>

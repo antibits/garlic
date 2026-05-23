@@ -16,6 +16,7 @@ import (
 	"github.com/antibits/garlic/internal/harness"
 	"github.com/antibits/garlic/internal/harness/session"
 	"github.com/antibits/garlic/internal/logger"
+	"github.com/antibits/garlic/internal/memory"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -138,6 +139,9 @@ func (s *Server) setupRoutes() {
 		// 消息发送（HTTP 方式）
 		api.POST("/messages/:sessionID", s.sendMessage)
 
+		// 会话控制
+		api.POST("/sessions/:id/stop", s.stopSession)
+
 		// 配置管理
 		api.GET("/config", s.getConfig)
 		api.PUT("/config", s.updateConfig)
@@ -157,6 +161,10 @@ func (s *Server) setupRoutes() {
 		api.GET("/tools/:name", s.getTool)
 		api.PUT("/tools/:name/disable", s.disableTool)
 		api.PUT("/tools/:name/enable", s.enableTool)
+
+		// 记忆管理
+		api.GET("/memories", s.listMemories)
+		api.DELETE("/memories", s.clearMemories)
 	}
 
 	// WebSocket 连接
@@ -495,6 +503,28 @@ func (s *Server) sendMessage(c *gin.Context) {
 	}
 }
 
+// stopSession 停止会话中正在进行的请求
+func (s *Server) stopSession(c *gin.Context) {
+	sessionID := c.Param("id")
+
+	sess := s.harness.GetSessionManager().GetSession(sessionID)
+	if sess == nil {
+		c.JSON(http.StatusNotFound, Response{
+			Success: false,
+			Error:   "Session not found",
+		})
+		return
+	}
+
+	// 取消当前正在处理的请求
+	sess.CancelCurrentRequest()
+
+	c.JSON(http.StatusOK, Response{
+		Success: true,
+		Data:    map[string]string{"message": "Session request cancelled"},
+	})
+}
+
 // handleWebSocket 处理 WebSocket 连接
 func (s *Server) handleWebSocket(c *gin.Context) {
 	sessionID := c.Param("sessionID")
@@ -695,6 +725,7 @@ type WebConfig struct {
 	Tools         ToolsConfigWeb            `json:"tools"`
 	ToolGenerator ToolGeneratorConfigWeb    `json:"tool_generator"`
 	ConvCompress  ConversationCompressWeb   `json:"conversation_compress"`
+	Memory        MemoryConfigWeb           `json:"memory"`
 	DisabledTools []string                  `json:"disabled_tools"`
 }
 
@@ -728,6 +759,43 @@ type ConversationCompressWeb struct {
 	Length   int  `json:"length"`
 }
 
+type MemoryConfigWeb struct {
+	Enabled         bool                  `json:"enabled"`
+	Splade          SpladeConfigWeb       `json:"splade"`
+	Qdrant          QdrantConfigWeb       `json:"qdrant"`
+	Storage         MemoryStorageConfigWeb `json:"storage"`
+	CleanupInterval int                   `json:"cleanup_interval"`
+	MaxInactiveDays int                   `json:"max_inactive_days"`
+}
+
+type SpladeConfigWeb struct {
+	ModelName       string `json:"model_name"`
+	Source          string `json:"source"`
+	CacheDir        string `json:"cache_dir"`
+	AutoDownload    bool   `json:"auto_download"`
+	DownloadTimeout int    `json:"download_timeout"`
+	VectorDim       int    `json:"vector_dim"`
+}
+
+type QdrantConfigWeb struct {
+	StorageBackend      string  `json:"storage_backend"`
+	StoragePath         string  `json:"storage_path"`
+	Host                string  `json:"host"`
+	Port                int     `json:"port"`
+	APIKey              string  `json:"api_key,omitempty"`
+	EnableTLS           bool    `json:"enable_tls"`
+	CollectionName      string  `json:"collection_name"`
+	Distance            string  `json:"distance"`
+	MaxMemories         int     `json:"max_memories"`
+	TopK                int     `json:"top_k"`
+	SimilarityThreshold float64 `json:"similarity_threshold"`
+}
+
+type MemoryStorageConfigWeb struct {
+	MetadataDir string `json:"metadata_dir"`
+	AutoImport  bool   `json:"auto_import"`
+}
+
 // saveConfig 将当前配置写入文件
 func (s *Server) saveConfig() error {
 	data, err := yaml.Marshal(s.config)
@@ -755,6 +823,14 @@ func (s *Server) getConfig(c *gin.Context) {
 			Disabled: s.config.ConvCompress.Disabled,
 			Round:    s.config.ConvCompress.Round,
 			Length:   s.config.ConvCompress.Length,
+		},
+		Memory: MemoryConfigWeb{
+			Enabled:         s.config.Memory.Enabled,
+			Splade:          convertSpladeToWeb(s.config.Memory.Splade),
+			Qdrant:          convertQdrantToWeb(s.config.Memory.Qdrant),
+			Storage:         convertMemoryStorageToWeb(s.config.Memory.Storage),
+			CleanupInterval: s.config.Memory.CleanupInterval,
+			MaxInactiveDays: s.config.Memory.MaxInactiveDays,
 		},
 		DisabledTools: s.config.DisabledTools,
 	}
@@ -838,6 +914,14 @@ func (s *Server) updateConfig(c *gin.Context) {
 	newCfg.ConvCompress.Round = webCfg.ConvCompress.Round
 	newCfg.ConvCompress.Length = webCfg.ConvCompress.Length
 	newCfg.DisabledTools = webCfg.DisabledTools
+
+	// 更新 Memory 配置
+	newCfg.Memory.Enabled = webCfg.Memory.Enabled
+	newCfg.Memory.Splade = convertSpladeFromWeb(webCfg.Memory.Splade)
+	newCfg.Memory.Qdrant = convertQdrantFromWeb(webCfg.Memory.Qdrant)
+	newCfg.Memory.Storage = convertMemoryStorageFromWeb(webCfg.Memory.Storage)
+	newCfg.Memory.CleanupInterval = webCfg.Memory.CleanupInterval
+	newCfg.Memory.MaxInactiveDays = webCfg.Memory.MaxInactiveDays
 
 	// 写入配置文件
 	data, err := yaml.Marshal(newCfg)
@@ -1495,5 +1579,134 @@ func (s *Server) enableTool(c *gin.Context) {
 	c.JSON(http.StatusOK, Response{
 		Success: true,
 		Data:    map[string]string{"message": fmt.Sprintf("tool '%s' enabled successfully", name)},
+	})
+}
+
+// ==================== Memory 配置转换函数 ====================
+
+// convertSpladeToWeb 将 config.SpladeConfig 转换为 SpladeConfigWeb
+func convertSpladeToWeb(cfg config.SpladeConfig) SpladeConfigWeb {
+	return SpladeConfigWeb{
+		ModelName:       cfg.ModelName,
+		Source:          cfg.Source,
+		CacheDir:        cfg.CacheDir,
+		AutoDownload:    cfg.AutoDownload,
+		DownloadTimeout: cfg.DownloadTimeout,
+		VectorDim:       cfg.VectorDim,
+	}
+}
+
+// convertSpladeFromWeb 将 SpladeConfigWeb 转换为 config.SpladeConfig
+func convertSpladeFromWeb(web SpladeConfigWeb) config.SpladeConfig {
+	return config.SpladeConfig{
+		ModelName:       web.ModelName,
+		Source:          web.Source,
+		CacheDir:        web.CacheDir,
+		AutoDownload:    web.AutoDownload,
+		DownloadTimeout: web.DownloadTimeout,
+		VectorDim:       web.VectorDim,
+	}
+}
+
+// convertQdrantToWeb 将 config.QdrantConfig 转换为 QdrantConfigWeb
+func convertQdrantToWeb(cfg config.QdrantConfig) QdrantConfigWeb {
+	return QdrantConfigWeb{
+		StorageBackend:      cfg.StorageBackend,
+		StoragePath:         cfg.StoragePath,
+		Host:                cfg.Host,
+		Port:                cfg.Port,
+		APIKey:              cfg.APIKey,
+		EnableTLS:           cfg.EnableTLS,
+		CollectionName:      cfg.CollectionName,
+		Distance:            cfg.Distance,
+		MaxMemories:         cfg.MaxMemories,
+		TopK:                cfg.TopK,
+		SimilarityThreshold: cfg.SimilarityThreshold,
+	}
+}
+
+// convertQdrantFromWeb 将 QdrantConfigWeb 转换为 config.QdrantConfig
+func convertQdrantFromWeb(web QdrantConfigWeb) config.QdrantConfig {
+	return config.QdrantConfig{
+		StorageBackend:      web.StorageBackend,
+		StoragePath:         web.StoragePath,
+		Host:                web.Host,
+		Port:                web.Port,
+		APIKey:              web.APIKey,
+		EnableTLS:           web.EnableTLS,
+		CollectionName:      web.CollectionName,
+		Distance:            web.Distance,
+		MaxMemories:         web.MaxMemories,
+		TopK:                web.TopK,
+		SimilarityThreshold: web.SimilarityThreshold,
+	}
+}
+
+// convertMemoryStorageToWeb 将 config.MemoryStorageConfig 转换为 MemoryStorageConfigWeb
+func convertMemoryStorageToWeb(cfg config.MemoryStorageConfig) MemoryStorageConfigWeb {
+	return MemoryStorageConfigWeb{
+		MetadataDir: cfg.MetadataDir,
+		AutoImport:  cfg.AutoImport,
+	}
+}
+
+// convertMemoryStorageFromWeb 将 MemoryStorageConfigWeb 转换为 config.MemoryStorageConfig
+func convertMemoryStorageFromWeb(web MemoryStorageConfigWeb) config.MemoryStorageConfig {
+	return config.MemoryStorageConfig{
+		MetadataDir: web.MetadataDir,
+		AutoImport:  web.AutoImport,
+	}
+}
+
+// ==================== 记忆管理 API ====================
+
+// listMemories 获取记忆列表
+func (s *Server) listMemories(c *gin.Context) {
+	filterType := c.Query("type")
+	limitStr := c.DefaultQuery("limit", "100")
+	
+	limit := 100
+	if _, err := fmt.Sscanf(limitStr, "%d", &limit); err != nil {
+		c.JSON(http.StatusBadRequest, Response{
+			Success: false,
+			Error:   "invalid limit parameter",
+		})
+		return
+	}
+	
+	memories, err := s.harness.ListMemories(c.Request.Context(), filterType, limit)
+	if err != nil {
+		logger.Error("Failed to list memories", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Error:   fmt.Sprintf("failed to list memories: %v", err),
+		})
+		return
+	}
+	
+	if memories == nil {
+		memories = []*memory.Memory{}
+	}
+	
+	c.JSON(http.StatusOK, Response{
+		Success: true,
+		Data:    memories,
+	})
+}
+
+// clearMemories 清除所有记忆
+func (s *Server) clearMemories(c *gin.Context) {
+	if err := s.harness.ClearMemories(c.Request.Context()); err != nil {
+		logger.Error("Failed to clear memories", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Error:   fmt.Sprintf("failed to clear memories: %v", err),
+		})
+		return
+	}
+	
+	c.JSON(http.StatusOK, Response{
+		Success: true,
+		Data:    map[string]interface{}{"message": "all memories cleared"},
 	})
 }

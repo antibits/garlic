@@ -1,0 +1,5 @@
+# SPLADE Embedder dependencies
+torch
+transformers
+modelscope  # For ModelScope model downloads
+# huggingface_hub  # Uncomment if using HuggingFace as source
