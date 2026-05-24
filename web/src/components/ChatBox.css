@@ -22,6 +22,7 @@
   flex: 1;
   overflow-y: auto;
   padding: 24px;
+  scroll-behavior: smooth;
 }
 
 .welcome-message {
@@ -124,6 +125,8 @@
   line-height: 1.5;
   font-size: 14px;
   word-break: break-word;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 /* user 消息不限制行高，自动扩展 */
@@ -389,6 +392,7 @@
 
 .message.streaming .message-text {
   position: relative;
+  scroll-behavior: smooth;
 }
 
 .cursor {
@@ -599,6 +603,7 @@
   display: flex;
   flex-direction: column;
   width: 100%;
+  position: relative;
 }
 
 [data-theme='dark'] .thought-box {
@@ -692,16 +697,39 @@
   width: fit-content;
 }
 
+/* Streaming 动画指示器 - 紧贴气泡底部 */
+.streaming-animation-indicator {
+  padding: 4px 8px;
+  margin-top: -8px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  background: transparent;
+}
+
+.thought-box .streaming-animation-indicator {
+  margin-top: 0;
+  padding: 8px 12px;
+  background: transparent;
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
 .thinking-animation {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-top: 4px;
+  padding: 4px 10px;
+  background: transparent;
+  border-radius: 12px;
 }
 
 .thinking-animation .dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--primary-color);
   animation: pulse-better 1.4s infinite ease-in-out;

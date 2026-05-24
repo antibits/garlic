@@ -589,7 +589,7 @@ func (s *Server) handleWSMessage(client *WSClient, sess *session.Session, conten
 	})
 
 	// 创建流式回调，将每个 chunk 通过 WebSocket 发送
-	var responseBuilder strings.Builder
+	// var responseBuilder strings.Builder
 	currentMessageType := "user" // Default message type
 
 	streamCtx := &session.StreamContext{
@@ -597,7 +597,7 @@ func (s *Server) handleWSMessage(client *WSClient, sess *session.Session, conten
 			// Update current message type from chunk
 			currentMessageType = chunk.MessageType
 
-			responseBuilder.WriteString(chunk.Content)
+			// responseBuilder.WriteString(chunk.Content)
 			s.sendWSMessage(client, WSMessage{
 				Type:    "chunk",
 				Data:    ChunkMessage{Content: chunk.Content, MessageType: currentMessageType},
@@ -618,23 +618,17 @@ func (s *Server) handleWSMessage(client *WSClient, sess *session.Session, conten
 
 	// 等待结果（带超时）
 	select {
-	case <-resultChan:
+	case result := <-resultChan:
 		// 发送完成消息，包含最终的消息类型
 		s.sendWSMessage(client, WSMessage{
 			Type:    "message",
-			Data:    ChunkMessage{Content: responseBuilder.String(), Done: true, MessageType: currentMessageType},
+			Data:    ChunkMessage{Content: result, Done: true, MessageType: currentMessageType},
 			Session: client.SessionID,
 		})
 	case err := <-errorChan:
 		s.sendWSMessage(client, WSMessage{
 			Type:    "error",
 			Data:    err.Error(),
-			Session: client.SessionID,
-		})
-	case <-time.After(5 * time.Minute):
-		s.sendWSMessage(client, WSMessage{
-			Type:    "error",
-			Data:    "Request timeout",
 			Session: client.SessionID,
 		})
 	}

@@ -36,6 +36,7 @@ const (
 // RouterResult contains the routing decision
 type RouterResult struct {
 	Intent          Intent `json:"intent"`
+	SimpleReply     string `json:"simple_reply,omitempty"`     // For Simple intent: simple reply content to the user.
 	ToolDescription string `json:"tool_description,omitempty"` // For tool intent: describes what kind of tool is needed
 	CurrentStep     string `json:"current_step,omitempty"`     // For StepByStep intent: give the next step to step forward.
 	RemainingPlan   string `json:"remaining_plan,omitempty"`   // Fro StepByStep intent: give the todo plan
@@ -187,7 +188,7 @@ Your core responsibility is to analyze the user's requirements and conversation 
 - **Memory Recall:** If the direct reply requires accessing memory (e.g., user preferences, project context, historical information), set need_memory to true and provide memory_queries.
 - **Action:** 
   - Without memory: Output the natural language answer directly. Do NOT output JSON.
-  - With memory: Output a valid JSON object: {"intent": "simple", "need_memory": true, "memory_queries": ["query1", "query2"]}
+  - With memory: Output a valid JSON object: {"intent": "simple", "simple_reply":"the simple reply content.", "need_memory": true, "memory_queries": ["query1", "query2"]}
 
 4. **[Finished]**
 - **CRITICAL**(When to use): Based on the conversation history, all explicit and implicit user requirements are fully resolved. You must proactively identify completion; do NOT wait for the user to say "thank you" or "done."
@@ -348,5 +349,6 @@ func (r *Router) parseResponse(content string) (string, *RouterResult, error) {
 
 	// Default to plan for ambiguous cases
 	result.Intent = IntentSimple
+	result.SimpleReply = content
 	return content, result, nil
 }

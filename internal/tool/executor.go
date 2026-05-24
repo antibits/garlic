@@ -115,12 +115,12 @@ func (e *Executor) ExecuteWithStream(ctx context.Context, toolName string, args 
 		// Stream the result output for built-in tools
 		if callback != nil && result != nil {
 			if result.Output != "" {
-				if err := callback("\n" + result.Output + "\n"); err != nil {
+				if err := callback("\n\n" + result.Output + "\n\n"); err != nil {
 					logger.Warn("Failed to send stream callback for built-in tool", zap.Error(err))
 				}
 			}
 			if result.Error != "" {
-				if err := callback("\n" + result.Error + "\n"); err != nil {
+				if err := callback("\n\n" + result.Error + "\n\n"); err != nil {
 					logger.Warn("Failed to send stream callback for built-in tool error", zap.Error(err))
 				}
 			}
@@ -230,6 +230,7 @@ func (e *Executor) executePythonTool(ctx context.Context, toolName string, args 
 					logger.Warn("Failed to send stream callback", zap.Error(err))
 				}
 			}
+			callback("\n\n")
 			if err := scanner.Err(); err != nil {
 				logger.Warn("Failed to read stdout", zap.Error(err))
 			}

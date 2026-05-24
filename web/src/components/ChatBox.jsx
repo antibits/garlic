@@ -140,10 +140,12 @@ const ChatBox = ({
       <div className="thought-content">
         {renderMarkdownContent(msg.content, msg.streaming)}
         {msg.streaming && (
-          <div className="thinking-animation">
-            <span className="dot"></span>
-            <span className="dot"></span>
-            <span className="dot"></span>
+          <div className="streaming-animation-indicator">
+            <div className="thinking-animation">
+              <span className="dot"></span>
+              <span className="dot"></span>
+              <span className="dot"></span>
+            </div>
           </div>
         )}
       </div>
@@ -233,22 +235,26 @@ const ChatBox = ({
                   {isAutoAsBot ? (
                     renderAutoMessageContent(msg)
                   ) : (
-                    <div className="message-text">
-                      {msg.streaming ? (
-                        renderMarkdownContent(msg.content, true)
-                      ) : isUserMessage ? (
-                        msg.content
-                      ) : (
-                        renderMarkdownContent(msg.content, false)
-                      )}
+                    <>
+                      <div className="message-text">
+                        {msg.streaming ? (
+                          renderMarkdownContent(msg.content, true)
+                        ) : isUserMessage ? (
+                          msg.content
+                        ) : (
+                          renderMarkdownContent(msg.content, false)
+                        )}
+                      </div>
                       {isStreamingBotMessage && (
-                        <div className="thinking-animation">
-                          <span className="dot"></span>
-                          <span className="dot"></span>
-                          <span className="dot"></span>
+                        <div className="streaming-animation-indicator">
+                          <div className="thinking-animation">
+                            <span className="dot"></span>
+                            <span className="dot"></span>
+                            <span className="dot"></span>
+                          </div>
                         </div>
                       )}
-                    </div>
+                    </>
                   )}
                   {followingAutoMessages.length > 0 && (
                     <div className="nested-auto-messages">

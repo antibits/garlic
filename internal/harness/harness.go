@@ -559,14 +559,13 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 				// Create new execution context for sub-task - this is auto process
 				currExecCtx = model.NewExecutionContext(currExecCtx.SessionName, model.NewInheritConversation(currExecCtx.Conversation.GetMessages(), 0), false, routeResult.RemainingPlan)
 				currExecCtx.SetMessageType(model.MessageTypeAuto)
-				currExecCtx.AddMessage("assistant", "I need to do this step by step.", model.MessageTypeHidden)
 				request, requestMsgType = routeResult.CurrentStep, model.MessageTypeHidden
 				continue
 			case agents.IntentTool:
 				_sendChunk := createSendChunk(model.MessageTypeAuto)
 				currExecCtx.IncrExecCount()
 				// Execute tool selection with streaming output
-				execResult, usage, err := h.executorAgent.SelectTool(
+				selectTool, usage, err := h.executorAgent.SelectTool(
 					ctx,
 					currExecCtx.Conversation.GetMessages(),
 					routeResult.ToolDescription,
@@ -580,20 +579,20 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 				var execError string
 				if err != nil {
 					return "", fmt.Errorf("[%s] select tool failed: %s\n", currExecCtx.SessionName, err.Error())
-				} else if len(execResult.ToolName) > 0 {
+				} else if len(selectTool.ToolName) > 0 {
 					// Check if selected item is a skill
-					if execResult.IsSkill {
+					if selectTool.IsSkill {
 						// Save skill info to execution context for subsequent rounds
-						currExecCtx.ActiveSkill = execResult.ToolName
-						currExecCtx.ActiveSkillPath = execResult.SkillPath
-						currExecCtx.ActiveSkillContent = execResult.SkillContent
-						logger.Info("Skill activated", zap.String("skill", execResult.ToolName), zap.String("path", execResult.SkillPath))
+						currExecCtx.ActiveSkill = selectTool.ToolName
+						currExecCtx.ActiveSkillPath = selectTool.SkillPath
+						currExecCtx.ActiveSkillContent = selectTool.SkillContent
+						logger.Info("Skill activated", zap.String("skill", selectTool.ToolName), zap.String("path", selectTool.SkillPath))
 						// Continue the loop without executing a tool
 						request, requestMsgType = "Continue with the skill activated.", model.MessageTypeHidden
 						continue
 					} else {
 						// Execute tool with streaming output for better UX
-						toolResult, err = h.executor.ExecuteWithStream(ctx, execResult.ToolName, execResult.ToolArgs, currExecCtx.ActiveSkillPath, _sendChunk)
+						toolResult, err = h.executor.ExecuteWithStream(ctx, selectTool.ToolName, selectTool.ToolArgs, currExecCtx.ActiveSkillPath, _sendChunk)
 						if err != nil && toolResult != nil && toolResult.Error == "" {
 							toolResult.Error = err.Error()
 						}
@@ -606,7 +605,7 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 					execError = fmt.Sprintf("I can't find a avalibale tool descript by %q .", routeResult.ToolDescription)
 				}
 				if toolResult != nil && !toolResult.Success {
-					execError = fmt.Sprintf("Execute tool '%s', end error: %s", execResult.ToolName, toolResult.Error)
+					execError = fmt.Sprintf("Execute tool '%s', end error: %s", selectTool.ToolName, toolResult.Error)
 				}
 
 				if len(execError) > 0 {
@@ -628,7 +627,7 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 					// Stream organizer output for long tool results
 					// Create temporary messages including tool result
 					messages := currExecCtx.Conversation.GetNoInheritMessages()
-					toReorgMsgs := make([]model.Message, len(messages)+1)
+					toReorgMsgs := make([]model.Message, len(messages), len(messages)+1)
 					copy(toReorgMsgs, messages)
 					organized, usage, err := h.organizer.Organize(ctx, append(toReorgMsgs, model.Message{
 						Role:      "assistant",
@@ -646,12 +645,18 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 				}
 			case agents.IntentSimple:
 				// Simple response was already streamed in real-time via AnalyzeStream
-				currExecCtx.AddMessage("assistant", routeAgentOutput, currExecCtx.DefaultMsgType)
+				if routeResult.SimpleReply == "" {
+					break
+				}
+				currExecCtx.AddMessage("assistant", routeResult.SimpleReply, currExecCtx.DefaultMsgType)
+				fallthrough
 			case agents.IntentUnknown:
 				fallthrough
 			default:
-				currExecCtx.AddMessage("assistant", routeAgentOutput, model.MessageTypeHidden)
-				request, requestMsgType = "The reply does not meet the requirements!", model.MessageTypeHidden
+				if routeResult.Intent != agents.IntentSimple {
+					currExecCtx.AddMessage("assistant", routeAgentOutput, model.MessageTypeHidden)
+				}
+				request, requestMsgType = "Check if all requirements are fully resolved.", model.MessageTypeHidden
 				continue
 			}
 		}
@@ -676,7 +681,7 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 					_sendChunk = createSendChunk(model.MessageTypeUser)
 				}
 				for _, msg := range currExecCtx.Conversation.GetNoInheritMessages() {
-					if msg.Role == "user" && msg.Content == "Go on until all finished." {
+					if msg.Role == "user" && msg.Content == "Check if requirements are fully resolved." {
 						continue
 					}
 					parentExecCtx.AddMessage(msg.Role, msg.Content, msg.Type)
@@ -685,7 +690,7 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 					}
 				}
 			}
-			request, requestMsgType = "Go on until all finished.", model.MessageTypeHidden
+			request, requestMsgType = "Check if requirements are fully resolved.", model.MessageTypeHidden
 			if currExecCtx.RemainingPlan != "" {
 				request = currExecCtx.RemainingPlan
 			}
