@@ -52,6 +52,7 @@ type Config struct {
 	ConvCompressLength   int
 	MemoryEnabled        bool
 	MemoryConfig         *config.MemoryConfig
+	DefaultTimeout       int // Default tool execution timeout in seconds
 }
 
 // AgentClients holds LLM clients for different agent roles
@@ -326,7 +327,7 @@ func (h *Harness) registerBuiltinTools() {
 	fwriter := &tool.FileWriterTool{}
 	h.executor.RegisterTool(fwriter)
 
-	cmdexec := tool.NewCmdExecTool()
+	cmdexec := tool.NewCmdExecTool(h.config.DefaultTimeout)
 	h.executor.RegisterTool(cmdexec)
 }
 

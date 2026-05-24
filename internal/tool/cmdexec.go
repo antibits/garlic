@@ -12,7 +12,8 @@ import (
 
 // CmdExecTool provides cross-platform command execution capability
 type CmdExecTool struct {
-	platform string
+	platform   string
+	timeoutSec int // Default timeout in seconds
 }
 
 // Name returns the tool name
@@ -22,7 +23,7 @@ func (t *CmdExecTool) Name() string {
 
 // Description returns the tool description with platform information and parameter list
 func (t *CmdExecTool) Description() string {
-	return fmt.Sprintf("Executes shell commands on %s platform. Use this tool to run system commands, scripts, and CLI tools.\n\nParameters:\n- command (required): The shell command to execute\n- workdir (optional): Working directory for command execution\n- timeout (optional): Timeout in seconds (default: 60)\n- shell (optional, Windows only): Shell type - 'powershell' (recommended) or 'cmd' (default: 'powershell' on Windows)", t.platform)
+	return fmt.Sprintf("Executes shell commands on %s platform. Use this tool to run system commands, scripts, and CLI tools.\n\nParameters:\n- command (required): The shell command to execute\n- workdir (optional): Working directory for command execution\n- timeout (optional): Timeout in seconds (default: %d seconds = %d minutes)\n- shell (optional, Windows only): Shell type - 'powershell' (recommended) or 'cmd' (default: 'powershell' on Windows)", t.platform, t.timeoutSec, t.timeoutSec/60)
 }
 
 // Execute executes a shell command with the given arguments
@@ -42,9 +43,12 @@ func (t *CmdExecTool) Execute(ctx context.Context, args map[string]interface{}) 
 		workDir = dir
 	}
 
-	// Extract optional timeout in seconds (default: 60)
-	timeoutSec := 60
-	if timeout, ok := args["timeout"].(float64); ok {
+	// Extract optional timeout in seconds (default: from config, fallback: 60)
+	timeoutSec := t.timeoutSec
+	if timeoutSec <= 0 {
+		timeoutSec = 60 // Fallback default
+	}
+	if timeout, ok := args["timeout"].(float64); ok && timeout > 0 {
 		timeoutSec = int(timeout)
 	}
 
@@ -101,8 +105,10 @@ func (t *CmdExecTool) Execute(ctx context.Context, args map[string]interface{}) 
 	}
 
 	if err != nil {
-		// Check if it's a timeout error
-		if execCtx.Err() == context.DeadlineExceeded {
+		// Check if context was cancelled (e.g., frontend request ended)
+		if ctx.Err() == context.Canceled {
+			result.Error = "command execution cancelled: user request ended"
+		} else if execCtx.Err() == context.DeadlineExceeded {
 			result.Error = fmt.Sprintf("command execution timed out after %d seconds", timeoutSec)
 		} else {
 			result.Error = fmt.Sprintf("command execution failed: %v. %s", err, result.Output)
@@ -118,9 +124,10 @@ func (t *CmdExecTool) GetPlatform() string {
 }
 
 // NewCmdExecTool creates a new command execution tool
-func NewCmdExecTool() *CmdExecTool {
+func NewCmdExecTool(timeoutSec int) *CmdExecTool {
 	return &CmdExecTool{
-		platform: getPlatformName(),
+		platform:   getPlatformName(),
+		timeoutSec: timeoutSec,
 	}
 }
 

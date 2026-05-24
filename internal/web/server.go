@@ -744,8 +744,9 @@ type AgentConfigWeb struct {
 }
 
 type ToolsConfigWeb struct {
-	PythonPath string `json:"python_path"`
-	ToolsDir   string `json:"tools_dir"`
+	PythonPath     string `json:"python_path"`
+	ToolsDir       string `json:"tools_dir"`
+	DefaultTimeout int    `json:"default_timeout"`
 }
 
 type ToolGeneratorConfigWeb struct {
@@ -816,8 +817,9 @@ func (s *Server) getConfig(c *gin.Context) {
 		Agents:        make(map[string]AgentConfigWeb),
 		ToolGenerator: ToolGeneratorConfigWeb{Enabled: s.config.ToolGenerator.Enabled, Model: s.config.ToolGenerator.Model},
 		Tools: ToolsConfigWeb{
-			PythonPath: s.config.Tools.PythonPath,
-			ToolsDir:   s.config.Tools.ToolsDir,
+			PythonPath:     s.config.Tools.PythonPath,
+			ToolsDir:       s.config.Tools.ToolsDir,
+			DefaultTimeout: s.config.Tools.DefaultTimeout,
 		},
 		ConvCompress: ConversationCompressWeb{
 			Disabled: s.config.ConvCompress.Disabled,
@@ -908,6 +910,7 @@ func (s *Server) updateConfig(c *gin.Context) {
 
 	newCfg.Tools.PythonPath = webCfg.Tools.PythonPath
 	newCfg.Tools.ToolsDir = webCfg.Tools.ToolsDir
+	newCfg.Tools.DefaultTimeout = webCfg.Tools.DefaultTimeout
 	newCfg.ToolGenerator.Enabled = webCfg.ToolGenerator.Enabled
 	newCfg.ToolGenerator.Model = webCfg.ToolGenerator.Model
 	newCfg.ConvCompress.Disabled = webCfg.ConvCompress.Disabled
@@ -967,6 +970,7 @@ func (s *Server) updateConfig(c *gin.Context) {
 		ConvCompressDisabled: newCfg.ConvCompress.Disabled,
 		ConvCompressRound:    newCfg.ConvCompress.Round,
 		ConvCompressLength:   newCfg.ConvCompress.Length,
+		DefaultTimeout:       newCfg.Tools.DefaultTimeout,
 	}
 	s.harness.UpdateConfig(harnessCfg)
 

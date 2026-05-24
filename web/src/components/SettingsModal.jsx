@@ -11,7 +11,8 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
     agents: {},
     tools: {
       python_path: 'python',
-      tools_dir: 'tools'
+      tools_dir: 'tools',
+      default_timeout: 300
     },
     tool_generator: {
       enabled: true,
@@ -490,6 +491,20 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
                       onChange={(e) => handleToolsChange('tools_dir', e.target.value)}
                       placeholder={t('settings.tools.placeholder.toolsDir')}
                     />
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>{t('settings.tools.defaultTimeout')}</label>
+                    <input
+                      type="number"
+                      value={config.tools.default_timeout || 300}
+                      onChange={(e) => handleToolsChange('default_timeout', parseInt(e.target.value) || 300)}
+                      min={10}
+                      max={3600}
+                    />
+                    <p className="hint">{t('settings.tools.timeoutHint')}</p>
                   </div>
                 </div>
               </div>

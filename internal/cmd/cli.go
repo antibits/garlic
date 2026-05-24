@@ -82,6 +82,7 @@ func runCLI(cmd *cobra.Command, args []string) error {
 		ConvCompressRound:    cfg.ConvCompress.Round,
 		ConvCompressLength:   cfg.ConvCompress.Length,
 		Debug:                debug,
+		DefaultTimeout:       cfg.Tools.DefaultTimeout,
 	}
 	h := harness.NewHarness(harnessCfg, clients)
 

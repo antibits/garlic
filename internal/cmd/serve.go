@@ -115,7 +115,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		ConvCompressLength:   cfg.ConvCompress.Length,
 		Debug:                debug,
 		MemoryEnabled:        cfg.Memory.Enabled,
-		MemoryConfig: &cfg.Memory,
+		MemoryConfig:         &cfg.Memory,
+		DefaultTimeout:       cfg.Tools.DefaultTimeout,
 	}
 	h := harness.NewHarness(harnessCfg, clients)
 

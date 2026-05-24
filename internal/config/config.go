@@ -96,9 +96,10 @@ type Config struct {
 	Models        map[string]ModelConfig            `yaml:"models"`
 	Agents        map[string]AgentConfig            `yaml:"agents"`
 	Tools         struct {
-		PythonPath string `yaml:"python_path"`
-		ToolsDir   string `yaml:"tools_dir"`
-		SkillsDir  string `yaml:"skills_dir"`
+		PythonPath          string `yaml:"python_path"`
+		ToolsDir            string `yaml:"tools_dir"`
+		SkillsDir           string `yaml:"skills_dir"`
+		DefaultTimeout      int    `yaml:"default_timeout"`       // Default tool execution timeout in seconds (default: 300 = 5 minutes)
 	} `yaml:"tools"`
 	ToolGenerator  ToolGeneratorConfig `yaml:"tool_generator,omitempty"`
 	ConvCompress   ConversationCompressConfig `yaml:"conversation_compress"`
@@ -128,6 +129,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Tools.SkillsDir == "" {
 		cfg.Tools.SkillsDir = "skills"
+	}
+	if cfg.Tools.DefaultTimeout <= 0 {
+		cfg.Tools.DefaultTimeout = 300 // 5 minutes
 	}
 	if cfg.ConvCompress.Round <= 0 {
 		cfg.ConvCompress.Round = 20

@@ -156,6 +156,8 @@
       "description": "Python tool execution environment configuration",
       "pythonPath": "Python Path",
       "toolsDir": "Tools Directory",
+      "defaultTimeout": "Response Timeout",
+      "timeoutHint": "Tool execution timeout in seconds, range 10-3600, default 300 seconds (5 minutes)",
       "placeholder": {
         "pythonPath": "python or full path",
         "toolsDir": "tools"

@@ -72,6 +72,8 @@ tools:
   python_path: python
   tools_dir: tools
   skills_dir: skills
+  # 工具执行超时时间（秒），默认 300 秒（5 分钟）
+  default_timeout: 300
 
 # 禁用的外部 Python 工具名称列表
 # 在此列出的工具将不会被加载和执行

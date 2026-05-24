@@ -156,6 +156,8 @@
       "description": "Python 工具执行环境配置",
       "pythonPath": "Python 路径",
       "toolsDir": "工具目录",
+      "defaultTimeout": "响应超时时间",
+      "timeoutHint": "工具执行超时时间（秒），范围 10-3600，默认 300 秒（5 分钟）",
       "placeholder": {
         "pythonPath": "python 或完整路径",
         "toolsDir": "tools"
