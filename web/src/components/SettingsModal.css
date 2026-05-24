@@ -258,6 +258,7 @@
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 16px;
   margin-bottom: 16px;
+  justify-items: start;
 }
 
 .form-row:last-child {
@@ -372,6 +373,7 @@
 .checkbox-group {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 10px;
 }
 
@@ -425,15 +427,67 @@
   box-shadow: 0 4px 12px rgba(0, 122, 255, 0.35);
 }
 
-.btn-delete {
-  background: rgba(255, 59, 48, 0.1);
-  color: #ff3b30;
+/* Model Name Input */
+.model-name-input {
+  width: 140px;
+  padding: 4px 8px;
+  border: 1px solid #007aff;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+  margin: 0 6px;
 }
 
-.btn-delete:hover {
-  background: rgba(255, 59, 48, 0.2);
-  color: #ff3b30;
-  transform: scale(1.05);
+/* Unified Model Action Buttons */
+.btn-model-action {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary, #8e8e93);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: inherit;
+  font-weight: normal;
+  box-shadow: none;
+  transform: none;
+  gap: 0;
+  margin-left: 4px;
+}
+
+.btn-model-action:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.btn-model-edit,
+.btn-model-save {
+  color: #b08d00;
+}
+.btn-model-edit:hover,
+.btn-model-save:hover {
+  background: rgba(176, 141, 0, 0.12);
+}
+
+.btn-model-save {
+  color: #4a9e5c;
+}
+.btn-model-save:hover {
+  background: rgba(74, 158, 92, 0.12);
+}
+
+.btn-model-delete {
+  color: #c05050;
+}
+.btn-model-delete:hover {
+  background: rgba(192, 80, 80, 0.12);
 }
 
 /* Loading State */

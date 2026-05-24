@@ -136,9 +136,6 @@ func (s *Server) setupRoutes() {
 		// 会话历史消息
 		api.GET("/sessions/:id/messages", s.getSessionMessages)
 
-		// 消息发送（HTTP 方式）
-		api.POST("/messages/:sessionID", s.sendMessage)
-
 		// 会话控制
 		api.POST("/sessions/:id/stop", s.stopSession)
 
@@ -446,63 +443,6 @@ func (s *Server) deleteSession(c *gin.Context) {
 	})
 }
 
-// sendMessage 发送消息到会话（HTTP 方式，用于非 WebSocket 客户端）
-func (s *Server) sendMessage(c *gin.Context) {
-	sessionID := c.Param("sessionID")
-	var req struct {
-		Message string `json:"message"`
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, Response{
-			Success: false,
-			Error:   "Invalid request body",
-		})
-		return
-	}
-
-	sess := s.harness.GetSessionManager().GetSession(sessionID)
-	if sess == nil {
-		c.JSON(http.StatusNotFound, Response{
-			Success: false,
-			Error:   "Session not found",
-		})
-		return
-	}
-
-	// 添加到会话输入队列
-	resultChan := make(chan string, 1)
-	errorChan := make(chan error, 1)
-
-	sess.GetInputChan() <- session.SessionInput{
-		Request: req.Message,
-		Result:  resultChan,
-		Error:   errorChan,
-	}
-
-	// 等待结果（带超时）
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
-	defer cancel()
-
-	select {
-	case result := <-resultChan:
-		c.JSON(http.StatusOK, Response{
-			Success: true,
-			Data:    map[string]string{"response": result},
-		})
-	case err := <-errorChan:
-		c.JSON(http.StatusInternalServerError, Response{
-			Success: false,
-			Error:   err.Error(),
-		})
-	case <-ctx.Done():
-		c.JSON(http.StatusGatewayTimeout, Response{
-			Success: false,
-			Error:   "Request timeout",
-		})
-	}
-}
-
 // stopSession 停止会话中正在进行的请求
 func (s *Server) stopSession(c *gin.Context) {
 	sessionID := c.Param("id")
@@ -761,12 +701,12 @@ type ConversationCompressWeb struct {
 }
 
 type MemoryConfigWeb struct {
-	Enabled         bool                  `json:"enabled"`
-	Splade          SpladeConfigWeb       `json:"splade"`
-	Qdrant          QdrantConfigWeb       `json:"qdrant"`
+	Enabled         bool                   `json:"enabled"`
+	Splade          SpladeConfigWeb        `json:"splade"`
+	Qdrant          QdrantConfigWeb        `json:"qdrant"`
 	Storage         MemoryStorageConfigWeb `json:"storage"`
-	CleanupInterval int                   `json:"cleanup_interval"`
-	MaxInactiveDays int                   `json:"max_inactive_days"`
+	CleanupInterval int                    `json:"cleanup_interval"`
+	MaxInactiveDays int                    `json:"max_inactive_days"`
 }
 
 type SpladeConfigWeb struct {
@@ -984,18 +924,18 @@ func (s *Server) updateConfig(c *gin.Context) {
 
 // SkillInfo API 响应结构
 type SkillInfo struct {
-	Name        string        `json:"name"`
-	Description string        `json:"description"`
-	Path        string        `json:"path"`
-	Enabled     bool          `json:"enabled"`
-	Version     string        `json:"version,omitempty"`
-	Author      string        `json:"author,omitempty"`
-	Created     string        `json:"created,omitempty"`
-	Updated     string        `json:"updated,omitempty"`
-	Tags        []string      `json:"tags,omitempty"`
-	Content     string        `json:"content,omitempty"`
-	HasScripts  bool          `json:"has_scripts"`
-	Scripts     []ScriptInfo  `json:"scripts,omitempty"`
+	Name        string       `json:"name"`
+	Description string       `json:"description"`
+	Path        string       `json:"path"`
+	Enabled     bool         `json:"enabled"`
+	Version     string       `json:"version,omitempty"`
+	Author      string       `json:"author,omitempty"`
+	Created     string       `json:"created,omitempty"`
+	Updated     string       `json:"updated,omitempty"`
+	Tags        []string     `json:"tags,omitempty"`
+	Content     string       `json:"content,omitempty"`
+	HasScripts  bool         `json:"has_scripts"`
+	Scripts     []ScriptInfo `json:"scripts,omitempty"`
 }
 
 // ScriptInfo represents a script file in a skill's scripts/ directory
@@ -1025,7 +965,7 @@ func (s *Server) listSkills(c *gin.Context) {
 				Path: script.Path,
 			})
 		}
-		
+
 		skillInfos = append(skillInfos, SkillInfo{
 			Name:        skill.Name,
 			Description: skill.Description,
@@ -1088,10 +1028,10 @@ func (s *Server) getSkill(c *gin.Context) {
 // createSkill 创建新 skill
 func (s *Server) createSkill(c *gin.Context) {
 	var req struct {
-		Name         string `json:"name" binding:"required"`
-		Description  string `json:"description" binding:"required"`
-		Content      string `json:"content"`
-		WithScripts  bool   `json:"with_scripts"`
+		Name        string `json:"name" binding:"required"`
+		Description string `json:"description" binding:"required"`
+		Content     string `json:"content"`
+		WithScripts bool   `json:"with_scripts"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -1668,7 +1608,7 @@ func convertMemoryStorageFromWeb(web MemoryStorageConfigWeb) config.MemoryStorag
 func (s *Server) listMemories(c *gin.Context) {
 	filterType := c.Query("type")
 	limitStr := c.DefaultQuery("limit", "100")
-	
+
 	limit := 100
 	if _, err := fmt.Sscanf(limitStr, "%d", &limit); err != nil {
 		c.JSON(http.StatusBadRequest, Response{
@@ -1677,7 +1617,7 @@ func (s *Server) listMemories(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	memories, err := s.harness.ListMemories(c.Request.Context(), filterType, limit)
 	if err != nil {
 		logger.Error("Failed to list memories", zap.Error(err))
@@ -1687,11 +1627,11 @@ func (s *Server) listMemories(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	if memories == nil {
 		memories = []*memory.Memory{}
 	}
-	
+
 	c.JSON(http.StatusOK, Response{
 		Success: true,
 		Data:    memories,
@@ -1708,7 +1648,7 @@ func (s *Server) clearMemories(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, Response{
 		Success: true,
 		Data:    map[string]interface{}{"message": "all memories cleared"},

@@ -76,8 +76,6 @@ func TestToolDiscoveryCacheInvalidation(t *testing.T) {
 	}
 
 	discovery := NewToolDiscovery(toolsDir, "python", nil)
-	// Set a very short check interval for testing
-	discovery.checkInterval = 1 * time.Millisecond
 
 	ctx := context.Background()
 

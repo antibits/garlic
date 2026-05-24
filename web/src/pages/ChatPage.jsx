@@ -28,78 +28,24 @@ const ChatPage = ({ onOpenSettings }) => {
   // 强制更新，用于触发重新渲染
   const [, forceUpdate] = useState(0)
 
-  // 初始化会话
-  useEffect(() => {
-    const initSession = async () => {
-      try {
-        const response = await api.getSessions()
-        const sessionsData = response.data?.sessions || []
-        const currentId = response.data?.current_id
+  // 刷新会话元信息（会话名、消息数等）
+  const refreshSessionMetadata = useCallback(async (sessionId) => {
+    try {
+      // 获取最新的会话列表信息
+      const response = await api.getSessions()
+      const sessionsData = response.data?.sessions || []
+      const updatedSession = sessionsData.find(s => s.id === sessionId)
 
-        console.log('Initialize sessions:', sessionsData, 'current_id:', currentId)
-
-        if (sessionsData.length > 0) {
-          const sessionIdToUse = currentId || sessionsData[0].id
-          setCurrentSessionId(sessionIdToUse)
-          setSessions(sessionsData)
-          // 为每个已有会话初始化状态
-          sessionsData.forEach(session => {
-            sessionStatesRef.current[session.id] = {
-              messages: [],
-              loading: false,
-              streamingMessageId: null,
-              copiedMessageId: null,
-              wsRef: { current: null }
-            }
-          })
-          
-          // 加载当前会话的历史消息
-          const currentSession = sessionsData.find(s => s.id === sessionIdToUse)
-          if (currentSession && currentSession.message_count > 0) {
-            try {
-              const historyResponse = await api.getSessionMessages(sessionIdToUse)
-              const messagesData = historyResponse.data?.messages || []
-              console.log('Loaded initial history messages:', messagesData.length)
-              
-              const formattedMessages = messagesData.map(msg => ({
-                id: `${msg.role}-${msg.timestamp}-${Math.random().toString(36).substr(2, 9)}`,
-                role: msg.role,
-                content: msg.content,
-                timestamp: msg.timestamp,
-                message_type: msg.type || 'user',
-                streaming: false
-              }))
-              
-              sessionStatesRef.current[sessionIdToUse].messages = formattedMessages
-            } catch (error) {
-              console.error('Failed to load initial history messages:', error)
-            }
-          }
-          
-          forceUpdate(n => n + 1)
-        } else {
-          const createResponse = await api.createSession()
-          const newSession = createResponse.data
-          console.log('Created new session:', newSession)
-          setCurrentSessionId(newSession.id)
-          setSessions([newSession])
-          sessionStatesRef.current[newSession.id] = {
-            messages: [],
-            loading: false,
-            streamingMessageId: null,
-            copiedMessageId: null,
-            wsRef: { current: null }
-          }
-          forceUpdate(n => n + 1)
-        }
-      } catch (error) {
-        console.error('Failed to initialize session:', error)
-      } finally {
-        setInitialized(true)
+      if (updatedSession) {
+        // 更新会话列表中的会话信息
+        setSessions(prev => prev.map(s =>
+          s.id === sessionId ? updatedSession : s
+        ))
+        console.log('Session metadata refreshed:', sessionId, 'message_count:', updatedSession.message_count)
       }
+    } catch (error) {
+      console.error('Failed to refresh session metadata:', error)
     }
-
-    initSession()
   }, [])
 
   // WebSocket 消息处理
@@ -214,7 +160,7 @@ const ChatPage = ({ onOpenSettings }) => {
         state.streamingMessageId = null
         state.loading = false
         forceUpdate(n => n + 1)
-        
+
         // 会话完成后，刷新会话元信息（会话名、消息数等）
         refreshSessionMetadata(sessionId)
         break
@@ -233,10 +179,25 @@ const ChatPage = ({ onOpenSettings }) => {
         forceUpdate(n => n + 1)
         break
 
+      case 'stopped':
+        // Handle user-initiated stop
+        const lastBotMessage4 = state.messages.findLast(msg => msg.role === 'assistant' && msg.streaming)
+        if (lastBotMessage4) {
+          state.messages = state.messages.map(msg =>
+            msg.id === lastBotMessage4.id
+              ? { ...msg, streaming: false }
+              : msg
+          )
+        }
+        state.streamingMessageId = null
+        state.loading = false
+        forceUpdate(n => n + 1)
+        break
+
       default:
         console.log('Unknown message type:', data.type)
     }
-  }, [])
+  }, [t, refreshSessionMetadata])
 
   const handleWebSocketOpen = useCallback((sessionId) => {
     console.log('WebSocket connected for session:', sessionId)
@@ -252,49 +213,95 @@ const ChatPage = ({ onOpenSettings }) => {
     console.log('WebSocket disconnected')
   }, [])
 
-  // 刷新会话元信息（会话名、消息数等）
-  const refreshSessionMetadata = useCallback(async (sessionId) => {
-    try {
-      // 获取最新的会话列表信息
-      const response = await api.getSessions()
-      const sessionsData = response.data?.sessions || []
-      const updatedSession = sessionsData.find(s => s.id === sessionId)
-      
-      if (updatedSession) {
-        // 更新会话列表中的会话信息
-        setSessions(prev => prev.map(s => 
-          s.id === sessionId ? updatedSession : s
-        ))
-        console.log('Session metadata refreshed:', sessionId, 'message_count:', updatedSession.message_count)
-      }
-    } catch (error) {
-      console.error('Failed to refresh session metadata:', error)
-    }
-  }, [])
-
   // 连接 WebSocket（每个会话独立连接）
-  const connectWebSocket = useCallback((sessionId) => {
-    const state = sessionStatesRef.current[sessionId]
-    if (!state) {
-      console.warn('Cannot connect WebSocket, no state for session:', sessionId)
-      return
-    }
+  const connectWebSocket = useCallback((sessionId, retryCount = 0) => {
+    return new Promise((resolve, reject) => {
+      const state = sessionStatesRef.current[sessionId]
+      if (!state) {
+        console.warn('Cannot connect WebSocket, no state for session:', sessionId)
+        reject(new Error('No state for session'))
+        return
+      }
 
-    console.log('Connecting WebSocket for session:', sessionId)
+      // 如果已有连接且状态正常，直接返回
+      if (state.wsRef.current) {
+        const readyState = state.wsRef.current.readyState
+        if (readyState === WebSocket.OPEN) {
+          console.log('WebSocket already connected for session:', sessionId)
+          resolve(state.wsRef.current)
+          return
+        }
+        if (readyState === WebSocket.CONNECTING) {
+          console.log('WebSocket already connecting for session:', sessionId)
+          // 等待连接完成
+          state.wsRef.current.addEventListener('open', () => resolve(state.wsRef.current))
+          state.wsRef.current.addEventListener('error', (err) => reject(err))
+          return
+        }
+        // 连接已关闭，清理
+        console.log('Closing stale WebSocket connection for session:', sessionId)
+        state.wsRef.current.close()
+        state.wsRef.current = null
+      }
 
-    // 如果已有连接，先断开
-    if (state.wsRef.current) {
-      state.wsRef.current.close()
-      state.wsRef.current = null
-    }
+      console.log('Connecting WebSocket for session:', sessionId, 'retry:', retryCount)
 
-    state.wsRef.current = api.createWebSocketConnection(
-      sessionId,
-      (data) => handleWebSocketMessage(sessionId, data),
-      handleWebSocketError,
-      () => handleWebSocketOpen(sessionId),
-      handleWebSocketClose
-    )
+      const ws = api.createWebSocketConnection(
+        sessionId,
+        (data) => handleWebSocketMessage(sessionId, data),
+        (error) => {
+          console.error('WebSocket error event:', error)
+          // 不立即 reject，等待 onclose 事件
+        },
+        () => {
+          console.log('WebSocket connected successfully')
+          handleWebSocketOpen(sessionId)
+          resolve(ws)
+        },
+        () => {
+          console.log('WebSocket closed')
+          handleWebSocketClose()
+          // 连接关闭时，如果是非正常关闭，尝试重连
+          if (retryCount < 3) {
+            console.log(`Retrying WebSocket connection... attempt ${retryCount + 1}`)
+            setTimeout(() => {
+              connectWebSocket(sessionId, retryCount + 1)
+                .then(resolve)
+                .catch(reject)
+            }, 1000 * (retryCount + 1)) // 递增延迟：1s, 2s, 3s
+          } else {
+            reject(new Error('WebSocket connection failed after retries'))
+          }
+        }
+      )
+
+      state.wsRef.current = ws
+
+      // 超时处理（30秒）
+      const timeoutId = setTimeout(() => {
+        if (ws.readyState !== WebSocket.OPEN) {
+          console.error('WebSocket connection timeout', {
+            sessionId,
+            retryCount,
+            readyState: ws.readyState,
+            url: ws.url
+          })
+          ws.close()
+          if (retryCount < 3) {
+            connectWebSocket(sessionId, retryCount + 1)
+              .then(resolve)
+              .catch(reject)
+          } else {
+            reject(new Error('WebSocket connection timeout after 30 seconds'))
+          }
+        }
+      }, 30000)
+
+      // 清理超时定时器
+      ws.addEventListener('open', () => {
+        clearTimeout(timeoutId)
+      })
+    })
   }, [handleWebSocketMessage, handleWebSocketError, handleWebSocketOpen, handleWebSocketClose])
 
   // 断开 WebSocket
@@ -307,12 +314,111 @@ const ChatPage = ({ onOpenSettings }) => {
     }
   }, [])
 
+  // 初始化会话
+  useEffect(() => {
+    if (initialized) return // 防止重复初始化
+
+    const initSession = async () => {
+      try {
+        const response = await api.getSessions()
+        const sessionsData = response.data?.sessions || []
+        const currentId = response.data?.current_id
+
+        console.log('Initialize sessions:', sessionsData, 'current_id:', currentId)
+
+        if (sessionsData.length > 0) {
+          const sessionIdToUse = currentId || sessionsData[0].id
+          setCurrentSessionId(sessionIdToUse)
+          setSessions(sessionsData)
+          // 为每个已有会话初始化状态
+          sessionsData.forEach(session => {
+            if (!sessionStatesRef.current[session.id]) {
+              sessionStatesRef.current[session.id] = {
+                messages: [],
+                loading: false,
+                streamingMessageId: null,
+                copiedMessageId: null,
+                wsRef: { current: null }
+              }
+            }
+          })
+
+          // 加载当前会话的历史消息
+          const currentSession = sessionsData.find(s => s.id === sessionIdToUse)
+          if (currentSession && currentSession.message_count > 0) {
+            try {
+              const historyResponse = await api.getSessionMessages(sessionIdToUse)
+              const messagesData = historyResponse.data?.messages || []
+              console.log('Loaded initial history messages:', messagesData.length)
+
+              const formattedMessages = messagesData.map(msg => ({
+                id: `${msg.role}-${msg.timestamp}-${Math.random().toString(36).substr(2, 9)}`,
+                role: msg.role,
+                content: msg.content,
+                timestamp: msg.timestamp,
+                message_type: msg.type || 'user',
+                streaming: false
+              }))
+
+              sessionStatesRef.current[sessionIdToUse].messages = formattedMessages
+            } catch (error) {
+              console.error('Failed to load initial history messages:', error)
+            }
+          }
+
+          forceUpdate(n => n + 1)
+
+          // 初始化完成后，为当前会话连接 WebSocket（不阻塞初始化）
+          connectWebSocket(sessionIdToUse).catch(error => {
+            console.error('Failed to connect WebSocket for initial session:', error)
+          })
+        } else {
+          const createResponse = await api.createSession()
+          const newSession = createResponse.data
+          console.log('Created new session:', newSession)
+          setCurrentSessionId(newSession.id)
+          setSessions([newSession])
+          sessionStatesRef.current[newSession.id] = {
+            messages: [],
+            loading: false,
+            streamingMessageId: null,
+            copiedMessageId: null,
+            wsRef: { current: null }
+          }
+          forceUpdate(n => n + 1)
+          // 新会话创建后连接 WebSocket（不阻塞）
+          connectWebSocket(newSession.id).catch(error => {
+            console.error('Failed to connect WebSocket for new session:', error)
+          })
+        }
+      } catch (error) {
+        console.error('Failed to initialize session:', error)
+      } finally {
+        setInitialized(true)
+      }
+    }
+
+    initSession()
+  }, [initialized, connectWebSocket])
+
   // 发送消息
-  const handleSendMessage = useCallback((sessionId, content) => {
+  const handleSendMessage = useCallback(async (sessionId, content) => {
     const state = sessionStatesRef.current[sessionId]
     if (!state) {
       console.error('Cannot send message, no state for session:', sessionId)
       return
+    }
+
+    // 检查 WebSocket 连接状态，如果断开则重新连接
+    if (!state.wsRef.current || state.wsRef.current.readyState !== WebSocket.OPEN) {
+      console.log('WebSocket not connected, reconnecting before sending message...')
+      try {
+        await connectWebSocket(sessionId)
+        console.log('WebSocket reconnected successfully')
+      } catch (error) {
+        console.error('Failed to reconnect WebSocket:', error)
+        // 连接失败，但仍尝试发送消息（可能会失败）
+      }
     }
 
     const userMessage = {
@@ -337,7 +443,7 @@ const ChatPage = ({ onOpenSettings }) => {
     forceUpdate(n => n + 1)
 
     api.sendWebSocketMessage(state.wsRef.current, content)
-  }, [])
+  }, [connectWebSocket])
 
   // 停止生成
   const handleStopGenerating = useCallback(async (sessionId) => {
@@ -420,8 +526,10 @@ const ChatPage = ({ onOpenSettings }) => {
         wsRef: { current: null }
       }
       setCurrentSessionId(newSession.id)
-      // 新会话创建后连接 WebSocket
-      setTimeout(() => connectWebSocket(newSession.id), 100)
+      // 新会话创建后连接 WebSocket（不阻塞）
+      connectWebSocket(newSession.id).catch(error => {
+        console.error('Failed to connect WebSocket for new session:', error)
+      })
       // 刷新会话元信息
       refreshSessionMetadata(newSession.id)
       forceUpdate(n => n + 1)

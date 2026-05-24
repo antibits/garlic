@@ -692,26 +692,26 @@
   width: fit-content;
 }
 
-.thinking-indicator-inline .thinking-animation {
+.thinking-animation {
   display: flex;
   align-items: center;
   gap: 4px;
+  margin-top: 4px;
 }
 
-.thinking-indicator-inline .thinking-animation .dot {
+.thinking-animation .dot {
   width: 10px;
   height: 10px;
   border-radius: 50%;
   background: var(--primary-color);
-  /* 调整动画时间和曲线，ease-in-out 会让动作更自然 */
-  animation: pulse-better 1.4s infinite ease-in-out; 
+  animation: pulse-better 1.4s infinite ease-in-out;
 }
 
-.thinking-indicator-inline .thinking-animation .dot:nth-child(2) {
+.thinking-animation .dot:nth-child(2) {
   animation-delay: 0.15s;
 }
 
-.thinking-indicator-inline .thinking-animation .dot:nth-child(3) {
+.thinking-animation .dot:nth-child(3) {
   animation-delay: 0.3s;
 }
 

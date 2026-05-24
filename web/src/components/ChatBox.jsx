@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Send, Loader2, Copy, Check, StopCircle } from 'lucide-react'
+import { Send, Copy, Check, StopCircle } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
@@ -138,6 +138,7 @@ const ChatBox = ({
   const renderAutoMessageContent = (msg) => (
     <div className="thought-box">
       <div className="thought-content">
+        {renderMarkdownContent(msg.content, msg.streaming)}
         {msg.streaming && (
           <div className="thinking-animation">
             <span className="dot"></span>
@@ -145,7 +146,6 @@ const ChatBox = ({
             <span className="dot"></span>
           </div>
         )}
-        {renderMarkdownContent(msg.content, msg.streaming)}
       </div>
     </div>
   )
@@ -230,15 +230,6 @@ const ChatBox = ({
                   {isUserMessage ? '👤' : '🤖'}
                 </div>
                 <div className="message-content">
-                  {isStreamingBotMessage && (
-                    <div className="thinking-indicator-inline">
-                      <div className="thinking-animation">
-                        <span className="dot"></span>
-                        <span className="dot"></span>
-                        <span className="dot"></span>
-                      </div>
-                    </div>
-                  )}
                   {isAutoAsBot ? (
                     renderAutoMessageContent(msg)
                   ) : (
@@ -249,6 +240,13 @@ const ChatBox = ({
                         msg.content
                       ) : (
                         renderMarkdownContent(msg.content, false)
+                      )}
+                      {isStreamingBotMessage && (
+                        <div className="thinking-animation">
+                          <span className="dot"></span>
+                          <span className="dot"></span>
+                          <span className="dot"></span>
+                        </div>
                       )}
                     </div>
                   )}
@@ -286,18 +284,6 @@ const ChatBox = ({
               </div>
             )
           })
-        )}
-
-        {loading && streamingMessageId === null && (
-          <div className="message bot loading">
-            <div className="message-avatar">🤖</div>
-            <div className="message-content">
-              <div className="message-text">
-                <Loader2 className="spinner" size={18} />
-                <span>{t('chat.thinking')}</span>
-              </div>
-            </div>
-          </div>
         )}
 
         <div ref={messagesEndRef} />

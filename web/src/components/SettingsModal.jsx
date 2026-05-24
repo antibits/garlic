@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { createPortal } from 'react-dom'
-import { X, Save, RotateCcw, Plus, Trash2, Settings, Cpu, Hammer, Layers, Database, ChevronDown, ChevronUp, Brain } from 'lucide-react'
+import { X, Save, RotateCcw, Plus, Trash2, Settings, Cpu, Hammer, Layers, Database, ChevronDown, ChevronUp, Brain, Edit, Check } from 'lucide-react'
+import './SettingsModal.css'
 
 const SettingsModal = ({ isOpen, onClose, onSave }) => {
   const { t } = useTranslation()
@@ -57,6 +58,8 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
 
   const [expandedModels, setExpandedModels] = useState({})
   const [hasChanges, setHasChanges] = useState(false)
+  const [editingModelName, setEditingModelName] = useState(null)
+  const [editingNameValue, setEditingNameValue] = useState('')
 
   // 加载配置
   useEffect(() => {
@@ -203,25 +206,95 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
   }
 
   const handleAddModel = () => {
-    const newModelName = `new-model-${Date.now()}`
+    // 生成默认模型名，如 my-model-1, my-model-2
+    let counter = 1
+    let newName = 'my-model-1'
+    while (config.models[newName]) {
+      counter++
+      newName = `my-model-${counter}`
+    }
+
     setConfig(prev => ({
       ...prev,
       models: {
-        ...prev.models,
-        [newModelName]: {
+        [newName]: {
           provider: 'openai',
           model: '',
           base_url: '',
           temperature: 0.7,
           max_tokens: 2048,
           enable_thinking: null
-        }
+        },
+        ...prev.models
       }
     }))
     setExpandedModels(prev => ({
       ...prev,
-      [newModelName]: true
+      [newName]: true
     }))
+    setHasChanges(true)
+  }
+
+  const handleStartEditName = (modelName) => {
+    setEditingModelName(modelName)
+    setEditingNameValue(modelName)
+  }
+
+  const handleSaveModelName = (oldName) => {
+    const newName = editingNameValue.trim()
+    if (!newName || newName === oldName) {
+      setEditingModelName(null)
+      return
+    }
+
+    if (config.models[newName]) {
+      alert(t('settings.models.alreadyExists', { name: newName }) || '该模型名称已存在')
+      return
+    }
+
+    // 保持原有顺序创建新模型对象
+    const newModels = {}
+    for (const [key, value] of Object.entries(config.models)) {
+      if (key === oldName) {
+        newModels[newName] = { ...value }
+      } else {
+        newModels[key] = value
+      }
+    }
+
+    setConfig(prev => ({
+      ...prev,
+      models: newModels
+    }))
+
+    // 更新展开状态
+    setExpandedModels(prev => {
+      const newExpanded = {}
+      for (const [key, value] of Object.entries(prev)) {
+        if (key === oldName) {
+          newExpanded[newName] = value
+        } else {
+          newExpanded[key] = value
+        }
+      }
+      return newExpanded
+    })
+
+    // 更新 agent 中引用的模型名
+    const newAgents = {}
+    for (const [agentName, agent] of Object.entries(config.agents)) {
+      if (agent.model === oldName) {
+        newAgents[agentName] = { ...agent, model: newName }
+      } else {
+        newAgents[agentName] = agent
+      }
+    }
+    setConfig(prev => ({
+      ...prev,
+      agents: newAgents
+    }))
+
+    setEditingModelName(null)
     setHasChanges(true)
   }
 
@@ -322,19 +395,58 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
                 <div className="models-list">
                   {modelNames.map(modelName => (
                     <div key={modelName} className="model-item">
-                      <div 
+                      <div
                         className="model-header"
                         onClick={() => toggleModelExpand(modelName)}
                       >
                         <div className="model-title">
                           {expandedModels[modelName] ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-                          <span className="model-name">{modelName}</span>
+                          {editingModelName === modelName ? (
+                            <input
+                              type="text"
+                              value={editingNameValue}
+                              onChange={(e) => setEditingNameValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                e.stopPropagation()
+                                if (e.key === 'Enter') handleSaveModelName(modelName)
+                                if (e.key === 'Escape') setEditingModelName(null)
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="model-name-input"
+                              autoFocus
+                            />
+                          ) : (
+                            <span className="model-name">{modelName}</span>
+                          )}
                           <span className="model-provider-badge">{config.models[modelName].provider}</span>
                           <span className="model-model-name">{config.models[modelName].model}</span>
                         </div>
                         <div className="model-actions">
+                          {editingModelName === modelName ? (
+                            <button
+                              className="btn-model-action btn-model-save"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleSaveModelName(modelName)
+                              }}
+                              title="保存"
+                            >
+                              <Check size={14} />
+                            </button>
+                          ) : (
+                            <button
+                              className="btn-model-action btn-model-edit"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleStartEditName(modelName)
+                              }}
+                              title="编辑名称"
+                            >
+                              <Edit size={14} />
+                            </button>
+                          )}
                           <button
-                            className="btn-icon btn-delete"
+                            className="btn-model-action btn-model-delete"
                             onClick={(e) => {
                               e.stopPropagation()
                               handleDeleteModel(modelName)
