@@ -490,7 +490,7 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 			if usage != nil {
 				session.AddTokenUsage(usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
 			}
-			currExecCtx = model.NewExecutionContext(session.Name, model.NewConversation(), true, "")
+			currExecCtx = model.NewExecutionContext(session.Name, model.NewInheritConversation(session.Conversation.GetMessages(), h.config.ConvCompressRound), true, "")
 		}
 	}
 
@@ -504,7 +504,7 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 		// This handles both the compression case (where currExecCtx has a separate conversation)
 		// and the normal case (where they share the same conversation)
 		if currExecCtx != nil && currExecCtx.Conversation != nil {
-			newMsgs := currExecCtx.Conversation.GetMessages()
+			newMsgs := currExecCtx.Conversation.GetNoInheritMessages()
 			if rewriteRequest {
 				newMsgs = append([]model.Message{
 					{
@@ -513,7 +513,7 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 						Timestamp: newMsgs[0].Timestamp,
 						Type:      newMsgs[0].Type,
 					},
-				}, newMsgs[1:]...)
+				}, newMsgs[h.config.ConvCompressRound+1:]...)
 			} else {
 				newMsgs = newMsgs[histMsgCount:]
 			}
@@ -796,13 +796,17 @@ func (h *Harness) GetAllTools(ctx context.Context) ([]tool.ToolInfo, error) {
 		allTools = append(allTools, builtinTools...)
 	}
 
-	// Get Python tools from discovery
+	// Get Python tools from discovery (skip built-in tools already obtained from executor)
 	if h.executorAgent != nil && h.executorAgent.GetToolDiscovery() != nil {
-		pythonTools, err := h.executorAgent.GetToolDiscovery().GetTools(ctx)
+		discoveredTools, err := h.executorAgent.GetToolDiscovery().GetTools(ctx)
 		if err != nil {
 			logger.Warn("Failed to get Python tools from discovery", zap.Error(err))
 		} else {
-			allTools = append(allTools, pythonTools...)
+			for _, t := range discoveredTools {
+				if t.Type == "python" {
+					allTools = append(allTools, t)
+				}
+			}
 		}
 	}
 

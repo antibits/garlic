@@ -170,7 +170,7 @@ const ChatPage = ({ onOpenSettings }) => {
         if (lastBotMessage2) {
           state.messages = state.messages.map(msg =>
             msg.id === lastBotMessage2.id
-              ? { ...msg, content: finalContent || msg.content, streaming: false, message_type: finalMessageType }
+              ? { ...msg, content: msg.content || finalContent, streaming: false, message_type: finalMessageType }
               : msg
           )
         } else {
