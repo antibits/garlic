@@ -67,7 +67,7 @@ func (g *ToolGenerator) GenerateTool(ctx context.Context, description string) (*
 	// Validate tool name (must be valid directory name)
 	if !isValidToolName(toolName) {
 		result.Success = false
-		result.Errors = []string{fmt.Sprintf("Invalid tool name: %s. Must contain only lowercase letters, numbers, and underscores", toolName)}
+		result.Errors = []string{fmt.Sprintf("Invalid tool name: %s. Must contain only letters, digits, underscores, and hyphens", toolName)}
 		return result, nil
 	}
 
@@ -225,7 +225,7 @@ func isValidToolName(name string) bool {
 		return false
 	}
 	for _, r := range name {
-		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_') {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-') {
 			return false
 		}
 	}

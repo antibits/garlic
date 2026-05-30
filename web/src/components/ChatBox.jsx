@@ -1,32 +1,47 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Send, Copy, Check, StopCircle } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import rehypeHighlight from 'rehype-highlight'
-import rehypeRaw from 'rehype-raw'
-import remarkMath from 'remark-math'
-import rehypeKatex from 'rehype-katex'
+import { Send, StopCircle, ArrowDown } from 'lucide-react'
+import MessageBubble from './MessageBubble'
 import './ChatBox.css'
+
+/**
+ * WelcomeScreen - 欢迎界面，独立组件避免随消息列表重渲染
+ */
+const WelcomeScreen = memo(({ t }) => (
+  <div className="welcome-message">
+    <div className="welcome-icon">🧄</div>
+    <h3>{t('chat.welcome')}</h3>
+    <p>{t('chat.welcomeMessage')}</p>
+    <div className="welcome-tips">
+      <div className="tip-item">{t('chat.tips.multiTurn')}</div>
+      <div className="tip-item">{t('chat.tips.realtime')}</div>
+      <div className="tip-item">{t('chat.tips.shortcut')}</div>
+    </div>
+  </div>
+))
+
+WelcomeScreen.displayName = 'WelcomeScreen'
 
 /**
  * ChatBox 组件 - 支持多会话并发
  *
- * 设计说明：
- * - 不再直接管理 WebSocket 连接，由父组件 ChatPage 统一管理连接池
- * - 只负责显示指定会话的消息和输入
- * - 通过 props 接收 WebSocket 相关方法
+ * 性能优化：
+ * - React.memo 避免父组件无关更新导致的重渲染
+ * - useMemo 缓存 getMessageGroups 计算结果
+ * - 提取 MessageBubble 为 memo 组件，已完成的消息不重渲染
+ * - requestAnimationFrame 优化滚动性能
  */
-const ChatBox = ({
+const ChatBox = memo(({
   sessionId,
-  wsRef,           // WebSocket 引用（由父组件管理）
-  messages,        // 消息列表（由父组件管理）
-  loading,         // 加载状态（由父组件管理）
+  wsRef,
+  wsReadyState,
+  messages,
+  loading,
   streamingMessageId,
   copiedMessageId,
-  onSendMessage,   // 发送消息回调
-  onStopGenerating, // 停止生成回调
-  setCopiedMessageId // 设置复制状态
+  onSendMessage,
+  onStopGenerating,
+  setCopiedMessageId
 }) => {
   const { t } = useTranslation()
   const [input, setInput] = useState('')
@@ -34,11 +49,73 @@ const ChatBox = ({
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
   const messagesContainerRef = useRef(null)
+  const scrollRafRef = useRef(null)
+  const isNearBottomRef = useRef(true)
+  const [showScrollButton, setShowScrollButton] = useState(false)
 
-  // 滚动到底部
+  // 使用 rAF 优化的滚动到底部
+  const scrollToBottom = useCallback(() => {
+    if (scrollRafRef.current) {
+      cancelAnimationFrame(scrollRafRef.current)
+    }
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null
+      const el = messagesEndRef.current
+      if (el) {
+        el.scrollIntoView({ behavior: 'instant', block: 'end' })
+      }
+    })
+  }, [])
+
+  // 检测用户是否在底部附近
+  const checkNearBottom = useCallback(() => {
+    const container = messagesContainerRef.current
+    if (!container) return true
+    const threshold = 150
+    return container.scrollHeight - container.scrollTop - container.clientHeight < threshold
+  }, [])
+
+  // 消息变化时滚动，但仅在用户在底部附近时才自动滚动
   useEffect(() => {
+    if (isNearBottomRef.current) {
+      scrollToBottom()
+    }
+  }, [messages, scrollToBottom])
+
+  // 监听用户滚动，记录是否在底部，并控制回到底部按钮的显示
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    const handleScroll = () => {
+      const nearBottom = checkNearBottom()
+      isNearBottomRef.current = nearBottom
+      // 仅当状态真正变化时才更新，避免不必要的重渲染
+      setShowScrollButton(prev => {
+        const shouldShow = !nearBottom
+        return prev !== shouldShow ? shouldShow : prev
+      })
+    }
+
+    container.addEventListener('scroll', handleScroll, { passive: true })
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [checkNearBottom])
+
+  // 点击回到底部按钮
+  const handleScrollToBottom = useCallback(() => {
+    isNearBottomRef.current = true
+    setShowScrollButton(false)
     scrollToBottom()
-  }, [messages])
+  }, [scrollToBottom])
+
+  // 清理 rAF
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current) {
+        cancelAnimationFrame(scrollRafRef.current)
+      }
+    }
+  }, [])
 
   // 调整 textarea 高度
   useEffect(() => {
@@ -48,20 +125,14 @@ const ChatBox = ({
     }
   }, [input])
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
-
   const handleSend = useCallback(() => {
     const trimmedInput = input.trim()
     const wsConnected = wsRef?.current && wsRef.current.readyState === WebSocket.OPEN
-    console.log('handleSend:', { trimmedInput: !!trimmedInput, loading, wsConnected, wsReadyState: wsRef?.current?.readyState })
     if (!trimmedInput || loading || !wsConnected) return
 
     onSendMessage(trimmedInput)
     setInput('')
 
-    // 重置 textarea 高度
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
     }
@@ -71,14 +142,14 @@ const ChatBox = ({
     onStopGenerating()
   }, [onStopGenerating])
 
-  const handleKeyPress = (e) => {
+  const handleKeyPress = useCallback((e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
     }
-  }
+  }, [handleSend])
 
-  const handleCopy = async (content, messageId) => {
+  const handleCopy = useCallback(async (content, messageId) => {
     if (!setCopiedMessageId) return
     try {
       await navigator.clipboard.writeText(content)
@@ -87,80 +158,16 @@ const ChatBox = ({
     } catch (error) {
       console.error('Failed to copy:', error)
     }
-  }
+  }, [setCopiedMessageId])
 
-  const handleInput = (e) => {
-    setInput(e.target.value)
-  }
-
-  // 渲染消息内容（Markdown）
-  const renderMarkdownContent = (content, isStreaming) => (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath]}
-      rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
-      components={{
-        code: ({ node, inline, className, children, ...props }) => {
-          const match = /language-(\w+)/.exec(className || '')
-          return inline ? (
-            <code className={className} {...props}>
-              {children}
-            </code>
-          ) : (
-            <div className="code-block-wrapper">
-              <div className="code-block-header">
-                <span className="code-block-language">{match ? match[1] : 'code'}</span>
-                <button
-                  className="btn-copy-code"
-                  onClick={() => {
-                    const codeText = String(children).replace(/\n$/, '')
-                    navigator.clipboard.writeText(codeText)
-                  }}
-                >
-                  <Copy size={12} />
-                  <span>{t('chat.codeBlock.copy')}</span>
-                </button>
-              </div>
-              <pre>
-                <code className={className} {...props}>
-                  {children}
-                </code>
-              </pre>
-            </div>
-          )
-        }
-      }}
-    >
-      {content || ''}
-    </ReactMarkdown>
-  )
-
-  // 渲染 auto 类型的消息内容（思考框）
-  const renderAutoMessageContent = (msg) => (
-    <div className="thought-box">
-      <div className="thought-content">
-        {renderMarkdownContent(msg.content, msg.streaming)}
-        {msg.streaming && (
-          <div className="streaming-animation-indicator">
-            <div className="thinking-animation">
-              <span className="dot"></span>
-              <span className="dot"></span>
-              <span className="dot"></span>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-
-  // 将消息分组：user 消息和 bot 消息交替显示，auto 消息作为前一个 bot 消息的嵌套内容
-  const getMessageGroups = () => {
-    const messageGroups = []
+  // useMemo 缓存消息分组计算
+  const messageGroups = useMemo(() => {
+    const groups = []
     let currentGroup = null
 
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i]
 
-      // 跳过空消息和 hidden 消息
       if ((msg.role === 'assistant' && !msg.streaming && (!msg.content || msg.content.trim() === '')) ||
           msg.message_type === 'hidden') {
         continue
@@ -170,129 +177,70 @@ const ChatBox = ({
         if (currentGroup && currentGroup.message.role === 'assistant') {
           currentGroup.autoMessages.push(msg)
         } else if (currentGroup && currentGroup.message.role === 'user') {
-          messageGroups.push(currentGroup)
-          currentGroup = {
-            message: msg,
-            autoMessages: [],
-            isAutoAsBot: true
-          }
+          groups.push(currentGroup)
+          currentGroup = { message: msg, autoMessages: [], isAutoAsBot: true }
         } else {
-          currentGroup = {
-            message: msg,
-            autoMessages: [],
-            isAutoAsBot: true
-          }
+          currentGroup = { message: msg, autoMessages: [], isAutoAsBot: true }
         }
       } else {
         if (currentGroup) {
-          messageGroups.push(currentGroup)
+          groups.push(currentGroup)
         }
-        currentGroup = {
-          message: msg,
-          autoMessages: []
-        }
+        currentGroup = { message: msg, autoMessages: [] }
       }
     }
     if (currentGroup) {
-      messageGroups.push(currentGroup)
+      groups.push(currentGroup)
     }
 
-    return messageGroups
-  }
+    return groups
+  }, [messages])
+
+  // 渲染消息列表（提取为内部组件便于阅读）
+  const renderedMessages = useMemo(() => (
+    messageGroups.map((group, index) => {
+      const msg = group.message
+      const isStreamingBotMessage = msg.role === 'assistant' && msg.streaming
+      const isUserMessage = msg.role === 'user'
+      const isBotMessage = msg.role === 'assistant'
+
+      return (
+        <MessageBubble
+          key={msg.id || `msg-${index}`}
+          msg={msg}
+          isStreaming={isStreamingBotMessage}
+          isUserMessage={isUserMessage}
+          isBotMessage={isBotMessage}
+          isAutoAsBot={group.isAutoAsBot}
+          followingAutoMessages={group.autoMessages}
+          copiedMessageId={copiedMessageId}
+          onCopy={handleCopy}
+          t={t}
+        />
+      )
+    })
+  ), [messageGroups, copiedMessageId, handleCopy, t])
 
   return (
     <div className="chat-box">
       <div className="chat-messages" ref={messagesContainerRef}>
         {messages.length === 0 ? (
-          <div className="welcome-message">
-            <div className="welcome-icon">🧄</div>
-            <h3>{t('chat.welcome')}</h3>
-            <p>{t('chat.welcomeMessage')}</p>
-            <div className="welcome-tips">
-              <div className="tip-item">{t('chat.tips.multiTurn')}</div>
-              <div className="tip-item">{t('chat.tips.realtime')}</div>
-              <div className="tip-item">{t('chat.tips.shortcut')}</div>
-            </div>
-          </div>
+          <WelcomeScreen t={t} />
         ) : (
-          getMessageGroups().map((group, index) => {
-            const msg = group.message
-            const followingAutoMessages = group.autoMessages
-            const isStreamingBotMessage = msg.role === 'assistant' && msg.streaming
-            const isUserMessage = msg.role === 'user'
-            const isBotMessage = msg.role === 'assistant'
-            const isAutoAsBot = group.isAutoAsBot
-
-            return (
-              <div
-                key={msg.id || index}
-                className={`message ${isUserMessage ? 'user' : 'bot'} ${msg.streaming ? 'streaming' : ''}`}
-              >
-                <div className="message-avatar">
-                  {isUserMessage ? '👤' : '🤖'}
-                </div>
-                <div className="message-content">
-                  {isAutoAsBot ? (
-                    renderAutoMessageContent(msg)
-                  ) : (
-                    <>
-                      <div className="message-text">
-                        {msg.streaming ? (
-                          renderMarkdownContent(msg.content, true)
-                        ) : isUserMessage ? (
-                          msg.content
-                        ) : (
-                          renderMarkdownContent(msg.content, false)
-                        )}
-                      </div>
-                      {isStreamingBotMessage && (
-                        <div className="streaming-animation-indicator">
-                          <div className="thinking-animation">
-                            <span className="dot"></span>
-                            <span className="dot"></span>
-                            <span className="dot"></span>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-                  {followingAutoMessages.length > 0 && (
-                    <div className="nested-auto-messages">
-                      {followingAutoMessages.map((autoMsg, autoIndex) => (
-                        <div key={autoMsg.id || `auto-${autoIndex}`} className="auto-message-item">
-                          {renderAutoMessageContent(autoMsg)}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {!msg.streaming && isBotMessage && (
-                    <div className="message-meta">
-                      <span className="message-time">
-                        {new Date(msg.timestamp).toLocaleTimeString('zh-CN', {
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </span>
-                      <button
-                        className="btn-copy"
-                        onClick={() => handleCopy(msg.content, msg.id || index)}
-                        title={t('common.copy')}
-                      >
-                        {copiedMessageId === (msg.id || index) ? (
-                          <Check size={14} />
-                        ) : (
-                          <Copy size={14} />
-                        )}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          })
+          renderedMessages
         )}
-
         <div ref={messagesEndRef} />
+        {/* 回到底部浮动按钮 */}
+        {showScrollButton && (
+          <button
+            className="scroll-to-bottom-btn"
+            onClick={handleScrollToBottom}
+            title={t('chat.scrollToBottom')}
+            aria-label={t('chat.scrollToBottom')}
+          >
+            <ArrowDown size={18} />
+          </button>
+        )}
       </div>
 
       <div className="chat-input-area">
@@ -302,10 +250,10 @@ const ChatBox = ({
               ref={textareaRef}
               className="chat-input"
               value={input}
-              onChange={handleInput}
+              onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder={t('chat.inputPlaceholder')}
-              disabled={loading || wsRef?.current?.readyState !== WebSocket.OPEN}
+              disabled={loading || wsReadyState !== WebSocket.OPEN}
               rows="1"
             />
             <div className="chat-input-actions">
@@ -322,7 +270,7 @@ const ChatBox = ({
                 <button
                   className="btn-send"
                   onClick={handleSend}
-                  disabled={!input.trim() || loading || wsRef?.current?.readyState !== WebSocket.OPEN}
+                  disabled={!input.trim() || loading || wsReadyState !== WebSocket.OPEN}
                 >
                   <Send size={18} />
                   <span>{t('chat.send')}</span>
@@ -334,6 +282,17 @@ const ChatBox = ({
       </div>
     </div>
   )
-}
+}, (prevProps, nextProps) => {
+  // 自定义比较函数：仅在消息内容或状态实际变化时才重渲染
+  if (prevProps.messages !== nextProps.messages) return false
+  if (prevProps.loading !== nextProps.loading) return false
+  if (prevProps.streamingMessageId !== nextProps.streamingMessageId) return false
+  if (prevProps.copiedMessageId !== nextProps.copiedMessageId) return false
+  if (prevProps.wsReadyState !== nextProps.wsReadyState) return false
+  if (prevProps.sessionId !== nextProps.sessionId) return false
+  return true // 跳过重渲染
+})
+
+ChatBox.displayName = 'ChatBox'
 
 export default ChatBox

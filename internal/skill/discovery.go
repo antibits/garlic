@@ -361,6 +361,9 @@ func (d *Discovery) CreateSkill(name, description, content string, withScripts b
 	if strings.TrimSpace(name) == "" {
 		return fmt.Errorf("skill name cannot be empty")
 	}
+	if !isValidFunctionName(name) {
+		return fmt.Errorf("invalid skill name '%s': must contain only letters (a-z, A-Z), digits (0-9), underscores (_), and hyphens (-)", name)
+	}
 	if strings.TrimSpace(description) == "" {
 		return fmt.Errorf("skill description cannot be empty")
 	}
@@ -526,6 +529,11 @@ func (d *Discovery) importFromZip(zipPath string, skillID string) error {
 		skillName = skillID
 	}
 
+	// Validate skill name for API compatibility
+	if !isValidFunctionName(skillName) {
+		return fmt.Errorf("invalid skill name '%s': must contain only letters (a-z, A-Z), digits (0-9), underscores (_), and hyphens (-)", skillName)
+	}
+
 	// Sanitize skill name for directory
 	skillDir := sanitizeDirName(skillName)
 	skillPath := filepath.Join(d.skillsDir, skillDir)
@@ -599,6 +607,11 @@ func (d *Discovery) importFromSkillMd(skillMdPath string, skillID string) error 
 	// If skillID is provided, use it as the directory name
 	if strings.TrimSpace(skillID) != "" {
 		skillName = skillID
+	}
+
+	// Validate skill name for API compatibility
+	if !isValidFunctionName(skillName) {
+		return fmt.Errorf("invalid skill name '%s': must contain only letters (a-z, A-Z), digits (0-9), underscores (_), and hyphens (-)", skillName)
 	}
 
 	// Sanitize skill name for directory
@@ -770,6 +783,20 @@ func sanitizeDirName(name string) string {
 	}
 
 	return sanitized.String()
+}
+
+// isValidFunctionName checks if a name is valid for use as an OpenAI function call name.
+// Must match ^[a-zA-Z0-9_-]+$ per API requirements (enforced by DeepSeek and others).
+func isValidFunctionName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 // generateSkillMarkdown generates a complete Skill.md file with YAML Front Matter

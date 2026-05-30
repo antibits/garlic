@@ -17,6 +17,7 @@ import (
 	"github.com/antibits/garlic/internal/harness/session"
 	"github.com/antibits/garlic/internal/logger"
 	"github.com/antibits/garlic/internal/memory"
+	"github.com/antibits/garlic/internal/tool"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -1305,11 +1306,12 @@ func (s *Server) enableSkill(c *gin.Context) {
 
 // ToolInfo API 响应结构
 type ToolInfo struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Description string `json:"description"`
-	Enabled     bool   `json:"enabled"`
-	ToolPath    string `json:"tool_path,omitempty"`
+	Name        string              `json:"name"`
+	Type        string              `json:"type"`
+	Description string              `json:"description"`
+	Parameters  []tool.ParameterInfo `json:"parameters,omitempty"`
+	Enabled     bool                `json:"enabled"`
+	ToolPath    string              `json:"tool_path,omitempty"`
 }
 
 // listTools 获取所有工具
@@ -1336,6 +1338,7 @@ func (s *Server) listTools(c *gin.Context) {
 			Name:        t.Name,
 			Type:        t.Type,
 			Description: t.Description,
+			Parameters:  t.Parameters,
 			Enabled:     t.Enabled,
 			ToolPath:    t.ToolPath,
 		})
@@ -1371,7 +1374,10 @@ func (s *Server) getTool(c *gin.Context) {
 				Success: true,
 				Data: ToolInfo{
 					Name:        tool.Name,
+					Type:        tool.Type,
 					Description: tool.Description,
+					Parameters:  tool.Parameters,
+					Enabled:     tool.Enabled,
 					ToolPath:    tool.ToolPath,
 				},
 			})

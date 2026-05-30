@@ -1044,13 +1044,31 @@ def main():
     # Set UTF-8 encoding for stdout
     sys.stdout.reconfigure(encoding='utf-8') if hasattr(sys.stdout, 'reconfigure') else None
 
+    # Handle meta-commands before argparse
+    if '-desc' in sys.argv:
+        print("Web Browser Tool - Search and Web Browsing. Supports two modes: search (web search via Baidu + page crawling) and browse (direct URL content extraction). Features full JavaScript support via Selenium WebDriver, headless Chrome, and content ranking.", file=sys.stdout)
+        return
+    if '-args' in sys.argv:
+        import json as _json
+        params = [
+            {"name": "mode", "type": "string", "description": "Operation mode: search or browse", "required": False, "default": "search", "choices": ["search", "browse"]},
+            {"name": "query", "type": "string", "description": "Search query string (required for search mode)", "required": False},
+            {"name": "url", "type": "string", "description": "URL to browse (required for browse mode)", "required": False},
+            {"name": "num", "type": "integer", "description": "Number of search results to fetch", "required": False, "default": 10},
+            {"name": "crawl_top_n", "type": "integer", "description": "Number of top results to crawl", "required": False, "default": 6},
+            {"name": "snippets_per_page", "type": "integer", "description": "Number of snippets per page", "required": False, "default": 20},
+            {"name": "timeout", "type": "integer", "description": "Page load timeout in seconds", "required": False, "default": 30},
+        ]
+        print(_json.dumps(params), file=sys.stdout)
+        return
+
     parser = argparse.ArgumentParser(
         description='Web Browser Tool - Search and Web Browsing',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
   # Search mode
   python main.py -mode search -query "Python programming"
-  
+
   # Browse mode
   python main.py -mode browse -url "https://example.com/article"
         """

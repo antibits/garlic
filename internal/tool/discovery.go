@@ -17,18 +17,30 @@ import (
 	"go.uber.org/zap"
 )
 
+// ParameterInfo describes a single parameter of a tool
+type ParameterInfo struct {
+	Name        string   `json:"name"`
+	Type        string   `json:"type"`        // "string", "integer", "boolean", "number"
+	Description string   `json:"description"`
+	Required    bool     `json:"required"`
+	Default     any      `json:"default,omitempty"`
+	Choices     []string `json:"choices,omitempty"`
+}
+
 // ToolInfo contains information about a tool
 type ToolInfo struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"` // "builtin" or "python"
-	Description string `json:"description"`
-	Enabled     bool   `json:"enabled"`
-	ToolPath    string `json:"tool_path"`
+	Name        string          `json:"name"`
+	Type        string          `json:"type"` // "builtin" or "python"
+	Description string          `json:"description"`
+	Parameters  []ParameterInfo `json:"parameters,omitempty"`
+	Enabled     bool            `json:"enabled"`
+	ToolPath    string          `json:"tool_path"`
 }
 
 // toolCacheEntry 单个工具的缓存条目
 type toolCacheEntry struct {
 	Description string
+	Parameters  []ParameterInfo
 	ModTime     int64 // 文件修改时间
 }
 
@@ -36,7 +48,8 @@ type toolCacheEntry struct {
 type ToolDiscovery struct {
 	toolsDir      string
 	pythonPath    string
-	disabledTools []string              // 禁用的工具名称列表
+	disabledTools []string                 // 禁用的工具名称列表
+	builtinTools  map[string]ToolInfo      // 内置工具信息
 	cache         map[string]toolCacheEntry // 每个工具的独立缓存
 	mu            sync.RWMutex
 }
@@ -47,6 +60,7 @@ func NewToolDiscovery(toolsDir, pythonPath string, disabledTools []string) *Tool
 		toolsDir:      toolsDir,
 		pythonPath:    pythonPath,
 		disabledTools: disabledTools,
+		builtinTools:  make(map[string]ToolInfo),
 		cache:         make(map[string]toolCacheEntry),
 	}
 }
@@ -56,6 +70,13 @@ func (d *ToolDiscovery) UpdateDisabledTools(disabledTools []string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.disabledTools = disabledTools
+}
+
+// RegisterBuiltin registers a built-in tool's info for inclusion in GetTools results
+func (d *ToolDiscovery) RegisterBuiltin(info ToolInfo) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.builtinTools[info.Name] = info
 }
 
 // GetTools returns all discovered tools with their descriptions
@@ -85,14 +106,15 @@ func (d *ToolDiscovery) GetTools(ctx context.Context) ([]ToolInfo, error) {
 				Name:        entry,
 				Type:        "python",
 				Description: cacheEntry.Description,
+				Parameters:  cacheEntry.Parameters,
 				Enabled:     !d.isToolDisabled(entry),
 				ToolPath:    toolPath,
 			})
 			continue
 		}
 
-		// 缓存未命中或文件已修改，按需加载描述
-		description, err := d.getToolDescriptionFromScript(ctx, toolPath)
+		// 缓存未命中或文件已修改，按需加载
+		description, err := d.getToolDescription(ctx, toolPath)
 		if err != nil {
 			logger.Warn("Failed to get tool description, using fallback",
 				zap.String("name", entry),
@@ -100,9 +122,18 @@ func (d *ToolDiscovery) GetTools(ctx context.Context) ([]ToolInfo, error) {
 			description = fmt.Sprintf("Tool: %s", entry)
 		}
 
+		parameters, err := d.getToolParameters(ctx, toolPath)
+		if err != nil {
+			logger.Debug("Failed to get tool parameters, using empty",
+				zap.String("name", entry),
+				zap.Error(err))
+			parameters = nil
+		}
+
 		// 更新缓存
 		d.cache[entry] = toolCacheEntry{
 			Description: description,
+			Parameters:  parameters,
 			ModTime:     modTime,
 		}
 
@@ -110,9 +141,17 @@ func (d *ToolDiscovery) GetTools(ctx context.Context) ([]ToolInfo, error) {
 			Name:        entry,
 			Type:        "python",
 			Description: description,
+			Parameters:  parameters,
 			Enabled:     !d.isToolDisabled(entry),
 			ToolPath:    toolPath,
 		})
+	}
+
+	// Add built-in tools
+	for _, info := range d.builtinTools {
+		// Apply disabled status dynamically
+		info.Enabled = !d.isToolDisabled(info.Name)
+		result = append(result, info)
 	}
 
 	// Sort by name for consistent ordering
@@ -174,11 +213,65 @@ func (d *ToolDiscovery) isToolDisabled(name string) bool {
 	return false
 }
 
-// getToolDescriptionFromScript runs main.py -h and extracts the description
-func (d *ToolDiscovery) getToolDescriptionFromScript(ctx context.Context, toolPath string) (string, error) {
+// getToolDescription runs main.py -desc to get the tool description.
+// Falls back to -h if -desc is not supported.
+func (d *ToolDiscovery) getToolDescription(ctx context.Context, toolPath string) (string, error) {
+	// Try -desc first (new protocol)
+	output, err := d.runToolMeta(ctx, toolPath, "-desc")
+	if err == nil && output != "" {
+		return strings.TrimSpace(output), nil
+	}
+
+	// Fallback to -h (legacy)
+	return d.getToolDescriptionFromHelp(ctx, toolPath)
+}
+
+// getToolParameters runs main.py -args to get the tool parameter schema as JSON.
+// Returns nil if -args is not supported.
+func (d *ToolDiscovery) getToolParameters(ctx context.Context, toolPath string) ([]ParameterInfo, error) {
+	output, err := d.runToolMeta(ctx, toolPath, "-args")
+	if err != nil {
+		return nil, err
+	}
+
+	output = strings.TrimSpace(output)
+	if output == "" {
+		return nil, fmt.Errorf("empty -args output")
+	}
+
+	var params []ParameterInfo
+	if err := json.Unmarshal([]byte(output), &params); err != nil {
+		return nil, fmt.Errorf("failed to parse -args JSON: %w", err)
+	}
+
+	return params, nil
+}
+
+// runToolMeta runs a meta-command (-desc or -args) on the tool script.
+func (d *ToolDiscovery) runToolMeta(ctx context.Context, toolPath string, flag string) (string, error) {
 	var stdout, stderr bytes.Buffer
 
-	// Run with a short timeout to avoid hanging
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, d.pythonPath, "main.py", flag)
+	cmd.Dir = toolPath
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		if stdout.Len() == 0 {
+			return "", fmt.Errorf("failed to run %s: %w (stderr: %s)", flag, err, stderr.String())
+		}
+	}
+
+	return stdout.String(), nil
+}
+
+// getToolDescriptionFromHelp runs main.py -h and extracts the description as fallback.
+func (d *ToolDiscovery) getToolDescriptionFromHelp(ctx context.Context, toolPath string) (string, error) {
+	var stdout, stderr bytes.Buffer
+
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, d.pythonPath, "main.py", "-h")
@@ -188,8 +281,6 @@ func (d *ToolDiscovery) getToolDescriptionFromScript(ctx context.Context, toolPa
 
 	err := cmd.Run()
 	if err != nil {
-		// -h typically returns exit code 0, but argparse may return non-zero
-		// Still try to parse stdout if we have output
 		if stdout.Len() == 0 {
 			return "", fmt.Errorf("failed to get help text: %w", err)
 		}
@@ -201,52 +292,6 @@ func (d *ToolDiscovery) getToolDescriptionFromScript(ctx context.Context, toolPa
 	}
 
 	return output, nil
-	// return string(new_line_pattern.ReplaceAll([]byte(output), []byte("<br/>"))), nil
-
-	// // Extract the first line or description from help output
-	// // Typically: "usage: ..." followed by description
-	// lines := strings.Split(output, "\n")
-	// for i, line := range lines {
-	// 	// Skip usage line
-	// 	if strings.HasPrefix(strings.TrimSpace(line), "usage:") {
-	// 		continue
-	// 	}
-	// 	// Skip empty lines
-	// 	trimmed := strings.TrimSpace(line)
-	// 	if trimmed == "" {
-	// 		continue
-	// 	}
-	// 	// Skip lines starting with positional arguments or options
-	// 	if strings.HasPrefix(trimmed, "positional arguments:") ||
-	// 		strings.HasPrefix(trimmed, "options:") ||
-	// 		strings.HasPrefix(trimmed, "-") {
-	// 		continue
-	// 	}
-	// 	// Use the first meaningful line as description
-	// 	// If we're at line 1 or 2 after usage, it's likely the description
-	// 	if i < 4 {
-	// 		// Clean up the description
-	// 		desc := strings.TrimSpace(trimmed)
-	// 		// Limit length for prompt efficiency
-	// 		if len(desc) > 200 {
-	// 			desc = desc[:197] + "..."
-	// 		}
-	// 		return desc, nil
-	// 	}
-	// }
-
-	// Fallback: use first non-empty line
-	// for _, line := range lines {
-	// 	trimmed := strings.TrimSpace(line)
-	// 	if trimmed != "" && !strings.HasPrefix(trimmed, "usage:") {
-	// 		if len(trimmed) > 200 {
-	// 			trimmed = trimmed[:197] + "..."
-	// 		}
-	// 		return trimmed, nil
-	// 	}
-	// }
-
-	// return fmt.Sprintf("Tool script: %s", filepath.Base(scriptPath)), nil
 }
 
 // ToJSON returns the tool list as JSON for template injection

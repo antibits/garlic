@@ -93,8 +93,8 @@ tool_generator:
 
 conversation_compress:
   disabled: false
-  round: 20
-  length: 2048
+  round: 50
+  length: 4096
 
 # Memory 系统配置 - 基于 SPLADE 稀疏向量和本地文件存储
 memory:

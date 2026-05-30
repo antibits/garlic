@@ -23,6 +23,9 @@
   overflow-y: auto;
   padding: 24px;
   scroll-behavior: smooth;
+  /* 性能优化：提示浏览器该区域将频繁滚动，启用 GPU 合成层 */
+  will-change: scroll-position;
+  transform: translateZ(0);
 }
 
 .welcome-message {
@@ -70,6 +73,11 @@
   gap: 12px;
   margin-bottom: 24px;
   animation: fadeIn 0.3s ease;
+  /* 性能优化：允许浏览器跳过离屏消息的渲染 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
+  /* 提示浏览器该元素内部变化不会影响外部布局 */
+  contain: layout style paint;
 }
 
 @keyframes fadeIn {
@@ -592,6 +600,53 @@
 
 .chat-messages::-webkit-scrollbar-thumb:hover {
   background: var(--text-tertiary);
+}
+
+/* 回到底部浮动按钮 */
+.scroll-to-bottom-btn {
+  position: sticky;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+  transition: all 0.2s ease;
+  animation: scrollBtnIn 0.2s ease-out;
+  margin-top: -56px;
+}
+
+.scroll-to-bottom-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transform: translateX(-50%) translateY(-2px);
+}
+
+.scroll-to-bottom-btn:active {
+  transform: translateX(-50%) translateY(0);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+@keyframes scrollBtnIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 
 /* 思考过程框 - 用于 auto 类型消息 */

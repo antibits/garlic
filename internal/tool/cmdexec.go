@@ -21,9 +21,31 @@ func (t *CmdExecTool) Name() string {
 	return "cmdexec"
 }
 
-// Description returns the tool description with platform information and parameter list
+// Description returns the tool description with platform information
 func (t *CmdExecTool) Description() string {
-	return fmt.Sprintf("Executes shell commands on %s platform. Use this tool to run system commands, scripts, and CLI tools.\n\nParameters:\n- command (required): The shell command to execute\n- workdir (optional): Working directory for command execution\n- timeout (optional): Timeout in seconds (default: %d seconds = %d minutes)\n- shell (optional, Windows only): Shell type - 'powershell' (recommended) or 'cmd' (default: 'powershell' on Windows)", t.platform, t.timeoutSec, t.timeoutSec/60)
+	return fmt.Sprintf("在 %s 平台上执行 shell 命令。用于运行系统命令、脚本和 CLI 工具。", t.platform)
+}
+
+// Parameters returns the parameter schema for function calling
+func (t *CmdExecTool) Parameters() []ParameterInfo {
+	shellDefault := "powershell"
+	shellChoices := []string{"powershell", "cmd"}
+	if t.platform != "windows" {
+		shellDefault = "bash"
+		shellChoices = nil
+	}
+	params := []ParameterInfo{
+		{Name: "command", Type: "string", Description: "要执行的 shell 命令", Required: true},
+		{Name: "workdir", Type: "string", Description: "命令执行的工作目录", Required: false},
+		{Name: "timeout", Type: "integer", Description: fmt.Sprintf("超时时间（秒），默认 %d 秒", t.timeoutSec), Required: false, Default: t.timeoutSec},
+	}
+	if len(shellChoices) > 0 {
+		params = append(params, ParameterInfo{
+			Name: "shell", Type: "string", Description: "Shell 类型",
+			Required: false, Default: shellDefault, Choices: shellChoices,
+		})
+	}
+	return params
 }
 
 // Execute executes a shell command with the given arguments

@@ -316,14 +316,21 @@ func (r *Router) parseResponse(content string) (string, *RouterResult, error) {
 
 	result := &RouterResult{}
 
-	// Check for JSON response first
+	// Check for JSON response first — 先用 jsonrepair 修复，防止格式异常
 	if strings.HasPrefix(content, "{") {
+		// Always try repair first for robustness
+		if fixed, repairErr := jsonrepair.Repair(content); repairErr == nil {
+			if err := json.Unmarshal([]byte(fixed), result); err == nil {
+				return content, result, nil
+			}
+		}
+		// Fallback: try original string
 		if err := json.Unmarshal([]byte(content), result); err == nil {
 			return content, result, nil
 		}
 	}
 
-	// Pre-process content: keep only quotes at specific positions before jsonrepair
+	// Pre-process quotes and try repair again (for non-{ prefixed content)
 	content = preProcessQuotes(content)
 
 	fixedContent, _ := jsonrepair.Repair(content)

@@ -28,6 +28,39 @@ const ChatPage = ({ onOpenSettings }) => {
   // 强制更新，用于触发重新渲染
   const [, forceUpdate] = useState(0)
 
+  // 流式更新节流：避免每个 token 都触发全量重渲染
+  const lastUpdateRef = useRef(0)
+  const pendingUpdateRef = useRef(null)
+
+  const throttledForceUpdate = useCallback(() => {
+    const now = Date.now()
+    const elapsed = now - lastUpdateRef.current
+    if (elapsed >= 50) {
+      lastUpdateRef.current = now
+      if (pendingUpdateRef.current) {
+        clearTimeout(pendingUpdateRef.current)
+        pendingUpdateRef.current = null
+      }
+      forceUpdate(n => n + 1)
+    } else if (!pendingUpdateRef.current) {
+      pendingUpdateRef.current = setTimeout(() => {
+        lastUpdateRef.current = Date.now()
+        pendingUpdateRef.current = null
+        forceUpdate(n => n + 1)
+      }, 50 - elapsed)
+    }
+  }, [])
+
+  // 立即刷新：取消待处理的节流更新，立即渲染
+  const flushForceUpdate = useCallback(() => {
+    if (pendingUpdateRef.current) {
+      clearTimeout(pendingUpdateRef.current)
+      pendingUpdateRef.current = null
+    }
+    lastUpdateRef.current = Date.now()
+    forceUpdate(n => n + 1)
+  }, [])
+
   // 刷新会话元信息（会话名、消息数等）
   const refreshSessionMetadata = useCallback(async (sessionId) => {
     try {
@@ -125,7 +158,7 @@ const ChatPage = ({ onOpenSettings }) => {
             }]
           }
         }
-        forceUpdate(n => n + 1)
+        throttledForceUpdate()
         break
 
       case 'message':
@@ -159,7 +192,7 @@ const ChatPage = ({ onOpenSettings }) => {
         }
         state.streamingMessageId = null
         state.loading = false
-        forceUpdate(n => n + 1)
+        flushForceUpdate()
 
         // 会话完成后，刷新会话元信息（会话名、消息数等）
         refreshSessionMetadata(sessionId)
@@ -176,7 +209,7 @@ const ChatPage = ({ onOpenSettings }) => {
         }
         state.streamingMessageId = null
         state.loading = false
-        forceUpdate(n => n + 1)
+        flushForceUpdate()
         break
 
       case 'stopped':
@@ -191,13 +224,13 @@ const ChatPage = ({ onOpenSettings }) => {
         }
         state.streamingMessageId = null
         state.loading = false
-        forceUpdate(n => n + 1)
+        flushForceUpdate()
         break
 
       default:
         console.log('Unknown message type:', data.type)
     }
-  }, [t, refreshSessionMetadata])
+  }, [t, refreshSessionMetadata, flushForceUpdate])
 
   const handleWebSocketOpen = useCallback((sessionId) => {
     console.log('WebSocket connected for session:', sessionId)
@@ -611,6 +644,7 @@ const ChatPage = ({ onOpenSettings }) => {
           <ChatBox
             sessionId={currentSessionId}
             wsRef={currentState.wsRef}
+            wsReadyState={currentState.wsRef?.current?.readyState}
             messages={currentState.messages}
             loading={currentState.loading}
             streamingMessageId={currentState.streamingMessageId}

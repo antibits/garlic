@@ -118,6 +118,13 @@ func NewHarness(cfg *Config, clients AgentClients) *Harness {
 	// Register tool generator if client is available
 	if clients.ToolGenerator != nil {
 		executor.RegisterTool(clients.ToolGenerator)
+		harness.executorAgent.GetToolDiscovery().RegisterBuiltin(tool.ToolInfo{
+			Name:        clients.ToolGenerator.Name(),
+			Type:        "builtin",
+			Description: clients.ToolGenerator.Description(),
+			Parameters:  clients.ToolGenerator.Parameters(),
+			Enabled:     true,
+		})
 		logger.Debug("Tool generator registered as built-in tool")
 	}
 
@@ -138,6 +145,13 @@ func (h *Harness) UpdateAgents(clients AgentClients) {
 	// Update tool generator if available
 	if clients.ToolGenerator != nil {
 		h.executor.RegisterTool(clients.ToolGenerator)
+		h.executorAgent.GetToolDiscovery().RegisterBuiltin(tool.ToolInfo{
+			Name:        clients.ToolGenerator.Name(),
+			Type:        "builtin",
+			Description: clients.ToolGenerator.Description(),
+			Parameters:  clients.ToolGenerator.Parameters(),
+			Enabled:     true,
+		})
 		logger.Debug("Tool generator updated")
 	}
 
@@ -322,12 +336,33 @@ func (h *Harness) ClearMemories(ctx context.Context) error {
 func (h *Harness) registerBuiltinTools() {
 	freader := &tool.FileReaderTool{}
 	h.executor.RegisterTool(freader)
+	h.executorAgent.GetToolDiscovery().RegisterBuiltin(tool.ToolInfo{
+		Name:        freader.Name(),
+		Type:        "builtin",
+		Description: freader.Description(),
+		Parameters:  freader.Parameters(),
+		Enabled:     true,
+	})
 
 	fwriter := &tool.FileWriterTool{}
 	h.executor.RegisterTool(fwriter)
+	h.executorAgent.GetToolDiscovery().RegisterBuiltin(tool.ToolInfo{
+		Name:        fwriter.Name(),
+		Type:        "builtin",
+		Description: fwriter.Description(),
+		Parameters:  fwriter.Parameters(),
+		Enabled:     true,
+	})
 
 	cmdexec := tool.NewCmdExecTool(h.config.DefaultTimeout)
 	h.executor.RegisterTool(cmdexec)
+	h.executorAgent.GetToolDiscovery().RegisterBuiltin(tool.ToolInfo{
+		Name:        cmdexec.Name(),
+		Type:        "builtin",
+		Description: cmdexec.Description(),
+		Parameters:  cmdexec.Parameters(),
+		Enabled:     true,
+	})
 }
 
 // startSessionWorkers starts goroutines for all sessions to process requests
@@ -442,7 +477,7 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 	}
 	// Rewrite request to be self-contained based on conversation history
 	rawRequest := request
-	if h.rewriter != nil && !h.config.ConvCompressDisabled && histMsgCount > h.config.ConvCompressRound && len([]rune(session.Conversation.GetText())) >= h.config.ConvCompressLength {
+	if h.rewriter != nil && !h.config.ConvCompressDisabled && histMsgCount > 2*h.config.ConvCompressRound && len([]rune(session.Conversation.GetText())) >= h.config.ConvCompressLength {
 		// Only rewrite if there's conversation history
 		rewritten, usage, err := h.rewriter.Rewrite(ctx, session.Conversation.GetMessages(), request, languageInstr)
 		if err != nil {
@@ -492,7 +527,7 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 
 	finished := false
 
-	for {
+	for !finished {
 		// Create sendChunk bound to current execution context
 		sendChunk := createSendChunk(currExecCtx.GetMessageType())
 		if !finished {
@@ -565,7 +600,7 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 				_sendChunk := createSendChunk(model.MessageTypeAuto)
 				currExecCtx.IncrExecCount()
 				// Execute tool selection with streaming output
-				selectTool, usage, err := h.executorAgent.SelectTool(
+				selectTools, usage, err := h.executorAgent.SelectTool(
 					ctx,
 					currExecCtx.Conversation.GetMessages(),
 					routeResult.ToolDescription,
@@ -575,41 +610,53 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 				if usage != nil {
 					session.AddTokenUsage(usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
 				}
-				var toolResult *tool.ToolResult
-				var execError string
 				if err != nil {
 					return "", fmt.Errorf("[%s] select tool failed: %s\n", currExecCtx.SessionName, err.Error())
-				} else if len(selectTool.ToolName) > 0 {
+				}
+
+				// Collect outputs from all tool executions
+				var allToolOutputs []string
+				var execError string
+
+				for _, selectTool := range selectTools {
+					var toolResult *tool.ToolResult
+					if execError != "" {
+						break
+					}
+					if selectTool == nil || selectTool.ToolName == "" {
+						execError = fmt.Sprintf("I can't find a avalibale tool descript by %q .", routeResult.ToolDescription)
+						break
+					}
+
 					// Check if selected item is a skill
 					if selectTool.IsSkill {
-						// Save skill info to execution context for subsequent rounds
 						currExecCtx.ActiveSkill = selectTool.ToolName
 						currExecCtx.ActiveSkillPath = selectTool.SkillPath
 						currExecCtx.ActiveSkillContent = selectTool.SkillContent
 						logger.Info("Skill activated", zap.String("skill", selectTool.ToolName), zap.String("path", selectTool.SkillPath))
-						// Continue the loop without executing a tool
-						request, requestMsgType = "Continue with the skill activated.", model.MessageTypeHidden
 						continue
-					} else {
-						// Execute tool with streaming output for better UX
-						toolResult, err = h.executor.ExecuteWithStream(ctx, selectTool.ToolName, selectTool.ToolArgs, currExecCtx.ActiveSkillPath, _sendChunk)
-						if err != nil && toolResult != nil && toolResult.Error == "" {
-							toolResult.Error = err.Error()
-						}
-						// Add token usage from tool execution
-						if toolResult != nil && toolResult.Usage != nil {
-							session.AddTokenUsage(toolResult.Usage.PromptTokens, toolResult.Usage.CompletionTokens, toolResult.Usage.TotalTokens)
-						}
 					}
-				} else {
-					execError = fmt.Sprintf("I can't find a avalibale tool descript by %q .", routeResult.ToolDescription)
-				}
-				if toolResult != nil && !toolResult.Success {
-					execError = fmt.Sprintf("Execute tool '%s', end error: %s", selectTool.ToolName, toolResult.Error)
+
+					// Execute tool with streaming output for better UX
+					toolResult, err = h.executor.ExecuteWithStream(ctx, selectTool.ToolName, selectTool.ToolArgs, currExecCtx.ActiveSkillPath, _sendChunk)
+					if err != nil && toolResult != nil && toolResult.Error == "" {
+						toolResult.Error = err.Error()
+					}
+					if toolResult != nil && toolResult.Usage != nil {
+						session.AddTokenUsage(toolResult.Usage.PromptTokens, toolResult.Usage.CompletionTokens, toolResult.Usage.TotalTokens)
+					}
+
+					if toolResult != nil && !toolResult.Success {
+						execError = fmt.Sprintf("Execute tool '%s', end error: %s", selectTool.ToolName, toolResult.Error)
+						break
+					}
+
+					if toolResult != nil && toolResult.Output != "" {
+						allToolOutputs = append(allToolOutputs, toolResult.Output)
+					}
 				}
 
 				if len(execError) > 0 {
-					// 检查执行次数是否超过限制
 					if currExecCtx.ShouldSkipExec() {
 						currExecCtx.AddMessage("assistant", execError, model.MessageTypeAuto)
 						break
@@ -621,17 +668,24 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 
 				currExecCtx.ResetExecCount()
 
-				if len([]rune(toolResult.Output)) < 512 {
-					currExecCtx.AddMessage("assistant", toolResult.Output, model.MessageTypeAuto)
+				if len(allToolOutputs) == 0 {
+					// No tools were executed (e.g., only skills activated)
+					continue
+				}
+
+				// Join all tool outputs
+				combinedOutput := strings.Join(allToolOutputs, "\n\n---\n\n")
+
+				if len([]rune(combinedOutput)) < 512 {
+					currExecCtx.AddMessage("assistant", combinedOutput, model.MessageTypeAuto)
 				} else {
 					// Stream organizer output for long tool results
-					// Create temporary messages including tool result
 					messages := currExecCtx.Conversation.GetNoInheritMessages()
 					toReorgMsgs := make([]model.Message, len(messages), len(messages)+1)
 					copy(toReorgMsgs, messages)
 					organized, usage, err := h.organizer.Organize(ctx, append(toReorgMsgs, model.Message{
 						Role:      "assistant",
-						Content:   toolResult.Output,
+						Content:   combinedOutput,
 						Timestamp: time.Now(),
 						Type:      model.MessageTypeHidden,
 					}), languageInstr, sendChunk)
@@ -695,8 +749,6 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 				request = currExecCtx.RemainingPlan
 			}
 			currExecCtx = parentExecCtx
-		} else {
-			break
 		}
 	}
 

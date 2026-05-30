@@ -26,7 +26,14 @@ func (t *ToolGeneratorTool) Name() string {
 
 // Description returns the tool description
 func (t *ToolGeneratorTool) Description() string {
-	return "Generate a new tool from a functional description. Creates a Python script in the tools directory that can be executed by the harness framework. IMPORTANT: Only use this tool when NO existing tool can accomplish the user's request. Do NOT use this tool if there are already available tools that can handle the task."
+	return "Generate a new tool from a functional description. Creates a Python script in the tools directory that can be executed by the harness framework. IMPORTANT: Only use this tool when NO existing tool can accomplish the user's request."
+}
+
+// Parameters returns the parameter schema for function calling
+func (t *ToolGeneratorTool) Parameters() []ParameterInfo {
+	return []ParameterInfo{
+		{Name: "description", Type: "string", Description: "Clear functional description of the tool to create, including what it does and what parameters it needs", Required: true},
+	}
 }
 
 // Execute generates a new tool based on the provided description

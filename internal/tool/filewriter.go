@@ -19,7 +19,18 @@ func (t *FileWriterTool) Name() string {
 
 // Description returns the tool description
 func (t *FileWriterTool) Description() string {
-	return "写入文件内容，支持插入写 (insert) 和覆盖写 (overwrite) 两种模式。参数：path (文件路径，必需), mode (写入模式：insert/overwrite，必需), content (要写入的内容，必需), start_line (insert 模式的插入位置行号从 1 开始，可选默认 1), start_line 和 end_line (overwrite 模式必需，表示要覆盖的行范围)"
+	return "写入文件内容，支持插入写 (insert) 和覆盖写 (overwrite) 两种模式。"
+}
+
+// Parameters returns the parameter schema for function calling
+func (t *FileWriterTool) Parameters() []ParameterInfo {
+	return []ParameterInfo{
+		{Name: "path", Type: "string", Description: "文件路径", Required: true},
+		{Name: "mode", Type: "string", Description: "写入模式：insert 或 overwrite", Required: true, Choices: []string{"insert", "overwrite"}},
+		{Name: "content", Type: "string", Description: "要写入的内容", Required: true},
+		{Name: "start_line", Type: "integer", Description: "insert 模式的插入位置行号，从 1 开始", Required: false, Default: 1},
+		{Name: "end_line", Type: "integer", Description: "overwrite 模式的结束行号", Required: false},
+	}
 }
 
 // Execute 执行文件写入操作

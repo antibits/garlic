@@ -40,7 +40,8 @@
     },
     "codeBlock": {
       "copy": "Copy"
-    }
+    },
+    "scrollToBottom": "Scroll to bottom"
   },
   "session": {
     "title": "Sessions",
@@ -80,6 +81,17 @@
     "disableSuccess": "Tool disabled",
     "enableFailed": "Enable failed",
     "disableFailed": "Disable failed",
+    "parameters": "Parameters",
+    "noParameters": "No parameters defined",
+    "requiredParam": "Required",
+    "optionalParam": "Optional",
+    "default": "Default",
+    "choices": "Choices",
+    "run": "Run",
+    "running": "Running...",
+    "runSuccess": "Execution succeeded",
+    "runFailed": "Execution failed",
+    "result": "Result",
     "webrowser": "Web Browser",
     "webrowserDesc": "Search the internet or browse web pages for information",
     "fileViewer": "File Viewer",

@@ -20,7 +20,7 @@ func TestDiscovery_CreateSkill(t *testing.T) {
 	ctx := context.Background()
 
 	// Test creating a skill
-	err = discovery.CreateSkill("测试技能", "这是一个测试技能", "## 描述\n\n测试内容", false)
+	err = discovery.CreateSkill("Test_Skill", "这是一个测试技能", "## 描述\n\n测试内容", false)
 	if err != nil {
 		t.Fatalf("Failed to create skill: %v", err)
 	}
@@ -35,12 +35,12 @@ func TestDiscovery_CreateSkill(t *testing.T) {
 		t.Fatalf("Expected 1 skill, got %d", len(skills))
 	}
 
-	if skills[0].Name != "测试技能" {
-		t.Fatalf("Expected skill name '测试技能', got '%s'", skills[0].Name)
+	if skills[0].Name != "Test_Skill" {
+		t.Fatalf("Expected skill name 'Test_Skill', got '%s'", skills[0].Name)
 	}
 
 	// Verify directory structure
-	skillDir := filepath.Join(tempDir, "测试技能")
+	skillDir := filepath.Join(tempDir, "test_skill")
 	if _, err := os.Stat(skillDir); os.IsNotExist(err) {
 		t.Fatalf("Skill directory not created: %s", skillDir)
 	}
@@ -64,19 +64,19 @@ func TestDiscovery_GetSkillByName(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a skill
-	err = discovery.CreateSkill("Test Skill", "Test description", "## Test content", false)
+	err = discovery.CreateSkill("Test_Skill", "Test description", "## Test content", false)
 	if err != nil {
 		t.Fatalf("Failed to create skill: %v", err)
 	}
 
 	// Test getting skill by name
-	skill, err := discovery.GetSkillByName(ctx, "Test Skill")
+	skill, err := discovery.GetSkillByName(ctx, "Test_Skill")
 	if err != nil {
 		t.Fatalf("Failed to get skill by name: %v", err)
 	}
 
-	if skill.Name != "Test Skill" {
-		t.Fatalf("Expected 'Test Skill', got '%s'", skill.Name)
+	if skill.Name != "Test_Skill" {
+		t.Fatalf("Expected 'Test_Skill', got '%s'", skill.Name)
 	}
 
 	t.Logf("✓ GetSkillByName works correctly")
@@ -93,19 +93,19 @@ func TestDiscovery_UpdateSkill(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a skill
-	err = discovery.CreateSkill("Update Test", "Original description", "## Original content", false)
+	err = discovery.CreateSkill("Update_Test", "Original description", "## Original content", false)
 	if err != nil {
 		t.Fatalf("Failed to create skill: %v", err)
 	}
 
 	// Update the skill
-	err = discovery.UpdateSkill("Update Test", "Updated description", "## Updated content")
+	err = discovery.UpdateSkill("Update_Test", "Updated description", "## Updated content")
 	if err != nil {
 		t.Fatalf("Failed to update skill: %v", err)
 	}
 
 	// Verify update
-	skill, err := discovery.GetSkillByName(ctx, "Update Test")
+	skill, err := discovery.GetSkillByName(ctx, "Update_Test")
 	if err != nil {
 		t.Fatalf("Failed to get updated skill: %v", err)
 	}
@@ -132,13 +132,13 @@ func TestDiscovery_DeleteSkill(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a skill
-	err = discovery.CreateSkill("Delete Test", "To be deleted", "## Delete me", false)
+	err = discovery.CreateSkill("Delete_Test", "To be deleted", "## Delete me", false)
 	if err != nil {
 		t.Fatalf("Failed to create skill: %v", err)
 	}
 
 	// Delete the skill
-	err = discovery.DeleteSkill("Delete Test")
+	err = discovery.DeleteSkill("Delete_Test")
 	if err != nil {
 		t.Fatalf("Failed to delete skill: %v", err)
 	}
@@ -172,9 +172,9 @@ func TestDiscovery_ListSkills(t *testing.T) {
 		description string
 		content     string
 	}{
-		{"Skill 1", "Description 1", "Content 1"},
-		{"Skill 2", "Description 2", "Content 2"},
-		{"Skill 3", "Description 3", "Content 3"},
+		{"Skill_1", "Description 1", "Content 1"},
+		{"Skill_2", "Description 2", "Content 2"},
+		{"Skill_3", "Description 3", "Content 3"},
 	}
 
 	for _, s := range skills {
@@ -206,13 +206,13 @@ func TestDiscovery_DuplicateSkill(t *testing.T) {
 	discovery := NewDiscovery(tempDir, nil)
 
 	// Create a skill
-	err = discovery.CreateSkill("Duplicate Test", "Description", "Content", false)
+	err = discovery.CreateSkill("Duplicate_Test", "Description", "Content", false)
 	if err != nil {
 		t.Fatalf("Failed to create skill: %v", err)
 	}
 
 	// Try to create duplicate
-	err = discovery.CreateSkill("Duplicate Test", "Another description", "Another content", false)
+	err = discovery.CreateSkill("Duplicate_Test", "Another description", "Another content", false)
 	if err == nil {
 		t.Fatal("Expected error when creating duplicate skill")
 	}
@@ -232,7 +232,7 @@ func TestDiscovery_ImportSkillMd(t *testing.T) {
 
 	// Create a temporary Skill.md file
 	skillMdContent := `---
-name: "Imported Skill"
+name: "Imported_Skill"
 description: "An imported skill"
 version: "1.0.0"
 ---
@@ -269,8 +269,8 @@ This skill was imported from a Skill.md file.
 		t.Fatalf("Expected 1 skill, got %d", len(skills))
 	}
 
-	if skills[0].Name != "Imported Skill" {
-		t.Fatalf("Expected skill name 'Imported Skill', got '%s'", skills[0].Name)
+	if skills[0].Name != "Imported_Skill" {
+		t.Fatalf("Expected skill name 'Imported_Skill', got '%s'", skills[0].Name)
 	}
 
 	t.Logf("✓ ImportSkill from Skill.md works correctly")
@@ -287,7 +287,7 @@ func TestDiscovery_ImportSkillWithScripts(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a skill with scripts
-	err = discovery.CreateSkill("Skill With Scripts", "Skill with scripts", "## Content", true)
+	err = discovery.CreateSkill("Skill_With_Scripts", "Skill with scripts", "## Content", true)
 	if err != nil {
 		t.Fatalf("Failed to create skill: %v", err)
 	}

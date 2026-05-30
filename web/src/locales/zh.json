@@ -40,7 +40,8 @@
     },
     "codeBlock": {
       "copy": "复制"
-    }
+    },
+    "scrollToBottom": "回到底部"
   },
   "session": {
     "title": "会话",
@@ -80,6 +81,17 @@
     "disableSuccess": "工具已禁用",
     "enableFailed": "启用失败",
     "disableFailed": "禁用失败",
+    "parameters": "参数",
+    "noParameters": "该工具没有定义参数",
+    "requiredParam": "必填",
+    "optionalParam": "可选",
+    "default": "默认值",
+    "choices": "可选值",
+    "run": "执行",
+    "running": "执行中...",
+    "runSuccess": "执行成功",
+    "runFailed": "执行失败",
+    "result": "执行结果",
     "webrowser": "网页浏览",
     "webrowserDesc": "搜索互联网或浏览网页获取信息",
     "fileViewer": "文件查看",

@@ -71,6 +71,20 @@ type ChatResponse struct {
 	Usage   Usage
 }
 
+// ToolCall represents a single function call from the LLM
+type ToolCall struct {
+	Name      string // Function name
+	Arguments string // JSON string of arguments
+}
+
+// FunctionCallResult represents function calls from the LLM (OpenAI function calling).
+// Supports both single and parallel tool calls.
+type FunctionCallResult struct {
+	Name      string     // Primary function name (for single call; empty if multiple)
+	Arguments string     // Primary arguments JSON (for single call; empty if multiple)
+	ToolCalls []ToolCall // All tool calls (single and parallel)
+}
+
 // Usage represents token usage
 type Usage struct {
 	PromptTokens     int
@@ -205,10 +219,10 @@ func (c *Client) ChatStream(ctx context.Context, messages []openai.ChatCompletio
 	return content, usage, nil
 }
 
-// ChatStreamWithTools sends a chat completion request with streaming response and tools
-// Returns the full content after streaming completes and token usage
-// If onChunk callback is provided, it will be called for each chunk
-func (c *Client) ChatStreamWithTools(ctx context.Context, messages []openai.ChatCompletionMessageParamUnion, tools []openai.ChatCompletionToolParam, prefix string, onChunk ...StreamChunkCallback) (string, *Usage, error) {
+// ChatFunctionCallStream sends a chat completion request with function calling capability.
+// It streams the response and collects the function call (name + arguments) from the model.
+// The onChunk callback is called for any text content chunks (e.g., model reasoning before the call).
+func (c *Client) ChatFunctionCallStream(ctx context.Context, messages []openai.ChatCompletionMessageParamUnion, tools []openai.ChatCompletionToolParam, prefix string, onChunk ...StreamChunkCallback) (*FunctionCallResult, string, *Usage, error) {
 	req := c.buildRequestWithTools(messages, tools)
 
 	stream := c.client.Chat.Completions.NewStreaming(ctx, req)
@@ -217,7 +231,7 @@ func (c *Client) ChatStreamWithTools(ctx context.Context, messages []openai.Chat
 		if c.llmLogger != nil {
 			c.llmLogger.LogError(messages, err)
 		}
-		return "", nil, err
+		return nil, "", nil, err
 	}
 	defer stream.Close()
 
@@ -225,7 +239,11 @@ func (c *Client) ChatStreamWithTools(ctx context.Context, messages []openai.Chat
 	hasContent := false
 	var usage *Usage
 
-	// Check if callback is provided
+	// Accumulate function calls across streaming chunks, keyed by index
+	funcNames := make(map[int]*strings.Builder)
+	funcArgs := make(map[int]*strings.Builder)
+	hasFunctionCall := false
+
 	var callback StreamChunkCallback
 	if len(onChunk) > 0 && onChunk[0] != nil {
 		callback = onChunk[0]
@@ -234,9 +252,6 @@ func (c *Client) ChatStreamWithTools(ctx context.Context, messages []openai.Chat
 	for stream.Next() {
 		chunk := stream.Current()
 
-		// Extract usage from the chunk if available
-		// Some providers return usage in the last chunk of the stream
-		// Check if usage has valid data (PromptTokens > 0)
 		if chunk.Usage.TotalTokens > 0 {
 			usage = &Usage{
 				PromptTokens:     int(chunk.Usage.PromptTokens),
@@ -246,20 +261,45 @@ func (c *Client) ChatStreamWithTools(ctx context.Context, messages []openai.Chat
 		}
 
 		if len(chunk.Choices) > 0 {
-			delta := chunk.Choices[0].Delta.Content
-			if delta != "" {
+			choice := chunk.Choices[0]
+			delta := choice.Delta
+
+			// Handle text content
+			if delta.Content != "" {
 				if !hasContent && prefix != "" {
 					fmt.Print(prefix)
 					hasContent = true
 				}
-				fmt.Print(delta)
-				fullContent.WriteString(delta)
-
-				// Call callback if provided
+				fmt.Print(delta.Content)
+				fullContent.WriteString(delta.Content)
 				if callback != nil {
-					if err := callback(delta); err != nil {
-						return fullContent.String(), usage, fmt.Errorf("callback error: %w", err)
+					if err := callback(delta.Content); err != nil {
+						return nil, fullContent.String(), usage, fmt.Errorf("callback error: %w", err)
 					}
+				}
+			}
+
+			// Handle tool calls (function calls) accumulated across chunks by index
+			for _, tc := range delta.ToolCalls {
+				hasFunctionCall = true
+				idx := int(tc.Index)
+
+				nameBuilder, ok := funcNames[idx]
+				if !ok {
+					nameBuilder = &strings.Builder{}
+					funcNames[idx] = nameBuilder
+				}
+				if tc.Function.Name != "" {
+					nameBuilder.WriteString(tc.Function.Name)
+				}
+
+				argsBuilder, ok := funcArgs[idx]
+				if !ok {
+					argsBuilder = &strings.Builder{}
+					funcArgs[idx] = argsBuilder
+				}
+				if tc.Function.Arguments != "" {
+					argsBuilder.WriteString(tc.Function.Arguments)
 				}
 			}
 		}
@@ -269,11 +309,11 @@ func (c *Client) ChatStreamWithTools(ctx context.Context, messages []openai.Chat
 		if c.llmLogger != nil {
 			c.llmLogger.LogError(messages, stream.Err())
 		}
-		return "", nil, fmt.Errorf("stream error: %w", stream.Err())
+		return nil, fullContent.String(), nil, fmt.Errorf("stream error: %w", stream.Err())
 	}
 
 	if hasContent {
-		fmt.Println() // Add newline after streaming
+		fmt.Println()
 		if callback != nil {
 			callback("\n\n")
 		}
@@ -286,7 +326,42 @@ func (c *Client) ChatStreamWithTools(ctx context.Context, messages []openai.Chat
 		c.llmLogger.LogInputOutput(messages, content, usage, true)
 	}
 
-	return content, usage, nil
+	if hasFunctionCall {
+		// Collect all tool calls ordered by index
+		maxIdx := 0
+		for idx := range funcNames {
+			if idx > maxIdx {
+				maxIdx = idx
+			}
+		}
+		toolCalls := make([]ToolCall, 0, maxIdx+1)
+		for i := 0; i <= maxIdx; i++ {
+			nameB := funcNames[i]
+			argsB := funcArgs[i]
+			if nameB == nil {
+				continue
+			}
+			tc := ToolCall{
+				Name:      nameB.String(),
+				Arguments: argsB.String(),
+			}
+			if tc.Name != "" {
+				toolCalls = append(toolCalls, tc)
+			}
+		}
+
+		result := &FunctionCallResult{
+			ToolCalls: toolCalls,
+		}
+		// Backwards compatibility: populate Name/Arguments for single call
+		if len(toolCalls) == 1 {
+			result.Name = toolCalls[0].Name
+			result.Arguments = toolCalls[0].Arguments
+		}
+		return result, content, usage, nil
+	}
+
+	return nil, content, usage, nil
 }
 
 func (c *Client) buildRequest(messages []openai.ChatCompletionMessageParamUnion) openai.ChatCompletionNewParams {

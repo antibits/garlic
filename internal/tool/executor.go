@@ -45,6 +45,13 @@ type Tool interface {
 	Execute(ctx context.Context, args map[string]interface{}) (*ToolResult, error)
 }
 
+// ParameterizedTool is an optional interface that tools can implement
+// to expose their parameter schema for function calling.
+type ParameterizedTool interface {
+	Tool
+	Parameters() []ParameterInfo
+}
+
 // StreamCallback is called for each line of output from the tool
 type StreamCallback func(line string) error
 
@@ -308,12 +315,20 @@ func (e *Executor) GetRegisteredTools() []ToolInfo {
 
 	for _, tool := range e.tools {
 		enabled := !e.isToolDisabled(tool.Name())
-		tools = append(tools, ToolInfo{
+
+		info := ToolInfo{
 			Name:        tool.Name(),
 			Type:        "builtin",
 			Description: tool.Description(),
 			Enabled:     enabled,
-		})
+		}
+
+		// If tool implements ParameterizedTool, include its parameters
+		if pt, ok := tool.(ParameterizedTool); ok {
+			info.Parameters = pt.Parameters()
+		}
+
+		tools = append(tools, info)
 	}
 
 	return tools
