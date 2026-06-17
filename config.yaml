@@ -40,9 +40,10 @@ agents:
         model: qwen3.5-plus
         system_prompt: ""
 tools:
-    python_path: f:/conda_data/envs/sd/python
+    python_path: python3
     tools_dir: tools
     skills_dir: skills
+    default_timeout: 300
 tool_generator:
     enabled: false
     model: qwen3.5-plus
