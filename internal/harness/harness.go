@@ -421,68 +421,218 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 	// Detect user language from the original request
 	languageInstr := llm.BuildLanguageInstruction(request)
 
-	// Helper to create a sendChunk closure bound to the current execution context
-	// This ensures the message type is always read from the current currExecCtx
-	createSendChunk := func(msgType model.MessageType) func(string) error {
+	// sendChunk streams a chunk to the frontend tagged with the given message type.
+	// Hidden messages are never streamed to the user.
+	sendChunk := func(msgType model.MessageType) func(string) error {
 		return func(chunk string) error {
-			if streamCtx != nil && streamCtx.OnChunk != nil {
-				// Get current message type from execution context
-
-				// Don't send hidden message types to the frontend
-				if msgType == model.MessageTypeHidden {
-					return nil
-				}
-
-				// Update stream context message type
-				streamCtx.MessageType = string(msgType)
-
-				// Send chunk with message type
-				return streamCtx.OnChunk(StreamChunk{
-					Content:     chunk,
-					MessageType: string(msgType),
-				})
+			if streamCtx == nil || streamCtx.OnChunk == nil {
+				return nil
 			}
-			return nil
+			if msgType == model.MessageTypeHidden {
+				return nil
+			}
+			streamCtx.MessageType = string(msgType)
+			return streamCtx.OnChunk(StreamChunk{
+				Content:     chunk,
+				MessageType: string(msgType),
+			})
 		}
 	}
 
-	// Track the initial message count to determine which messages are new
 	histMsgCount := session.Conversation.MessageCount()
-
 	if histMsgCount == 0 {
 		session.Name = strings.SplitN(request, "\n", 2)[0]
 	}
 
-	var currExecCtx *model.ExecutionContext
-	var rewriteRequest bool
+	// Step 1: initial memory recall + request rewriting (conversation compression).
+	recalledMemories := h.searchMemories(ctx, 5, request)
+	currExecCtx, rawRequest, rewriteRequest := h.initExecutionContext(ctx, session, request, languageInstr)
 
-	// Step 1: Retrieve relevant memories before processing request (initial search)
-	var recalledMemories []*memory.Memory
-	if h.memory != nil {
-		memories, err := h.memory.SearchMemories(ctx, request, 5, "")
+	// On return, persist all new messages from the active execution context back to the session.
+	defer func() {
+		if currExecCtx == nil || currExecCtx.Conversation == nil {
+			return
+		}
+		newMsgs := currExecCtx.Conversation.GetNoInheritMessages()
+		if rewriteRequest {
+			newMsgs = append([]model.Message{{
+				Role:      newMsgs[0].Role,
+				Content:   rawRequest,
+				Timestamp: newMsgs[0].Timestamp,
+				Type:      newMsgs[0].Type,
+			}}, newMsgs[h.config.ConvCompressRound+1:]...)
+		} else {
+			newMsgs = newMsgs[histMsgCount:]
+		}
+		session.PersistAppendMessages(newMsgs)
+		h.sessionManager.UpdateSessionMeta(session.ID)
+	}()
+
+	requestMsgType := model.MessageTypeUser
+
+	// Main backtracking loop. currExecCtx descends into sub-tasks (step_by_step) and
+	// ascends back to the parent (ExecCtxStack) when a sub-task is finished.
+	for {
+		stream := sendChunk(currExecCtx.GetMessageType())
+		if len(request) > 0 {
+			currExecCtx.AddMessage("user", request, requestMsgType)
+		}
+
+		routeOutput, routeResult, err := h.runRouter(ctx, session, currExecCtx, languageInstr, stream)
 		if err != nil {
-			logger.Warn("Failed to search memories", zap.Error(err))
-		} else if len(memories) > 0 {
-			logger.Info("Retrieved relevant memories", zap.Int("count", len(memories)))
-			for _, mem := range memories {
-				logger.Debug("Relevant memory",
-					zap.String("id", mem.Memory.ID),
-					zap.String("type", string(mem.Memory.Type)),
-					zap.String("name", mem.Memory.Name),
-					zap.Float64("score", mem.Score),
-				)
-				recalledMemories = append(recalledMemories, mem.Memory)
+			return "", err
+		}
+
+		h.recallRouterMemories(ctx, routeResult, &recalledMemories)
+		h.injectMemories(currExecCtx, recalledMemories)
+
+		switch routeResult.Intent {
+		case agents.IntentFinished:
+			// Sub-task (or whole request) is done; backtrack to parent if any.
+		case agents.IntentStepByStep:
+			session.ExecCtxStack.Push(currExecCtx)
+			currExecCtx = model.NewExecutionContext(
+				currExecCtx.SessionName,
+				model.NewInheritConversation(currExecCtx.Conversation.GetMessages(), 0),
+				false,
+				routeResult.RemainingPlan,
+			)
+			currExecCtx.SetMessageType(model.MessageTypeAuto)
+			request, requestMsgType = routeResult.CurrentStep, model.MessageTypeHidden
+			continue
+		case agents.IntentTool:
+			retry, done := h.executeTools(ctx, session, currExecCtx, routeResult, languageInstr, stream, sendChunk)
+			if done {
+				break
+			}
+			if retry {
+				request, requestMsgType = "Try some other way.", model.MessageTypeHidden
+				continue
+			}
+			// Tool produced output: fall through to re-check resolution below.
+		case agents.IntentSimple:
+			// Simple reply was already streamed in real-time via runRouter.
+			if routeResult.SimpleReply == "" {
+				break
+			}
+			currExecCtx.AddMessage("assistant", routeResult.SimpleReply, currExecCtx.DefaultMsgType)
+		default:
+			if routeResult.Intent != agents.IntentSimple {
+				currExecCtx.AddMessage("assistant", routeOutput, model.MessageTypeHidden)
 			}
 		}
+
+		// Either finished or no further atomic step: re-check resolution.
+		request, requestMsgType = "Check if all requirements are fully resolved.", model.MessageTypeHidden
+
+		// Backtrack: merge the completed (sub-)task context into its parent.
+		parentExecCtx := session.ExecCtxStack.Pop()
+		if parentExecCtx == nil {
+			// Top-level task finished.
+			break
+		}
+		currExecCtx, request = h.mergeSubTaskResult(ctx, session, languageInstr, parentExecCtx, currExecCtx, sendChunk)
+		requestMsgType = model.MessageTypeHidden
 	}
-	// Rewrite request to be self-contained based on conversation history
+
+	finalAssistMsg := currExecCtx.FinalAssistantMsg()
+
+	// Save important information to memory after request processing.
+	if h.memory != nil && finalAssistMsg.Content != "" {
+		h.extractMemoriesFromConversation(ctx, currExecCtx.Conversation.GetMessages())
+	}
+
+	return finalAssistMsg.Content, nil
+}
+
+// searchMemories queries the memory store for each query, returning unique memories.
+func (h *Harness) searchMemories(ctx context.Context, perQuery int, queries ...string) []*memory.Memory {
+	if h.memory == nil {
+		return nil
+	}
+	seen := make(map[string]bool)
+	var results []*memory.Memory
+	for _, query := range queries {
+		if query == "" {
+			continue
+		}
+		memories, err := h.memory.SearchMemories(ctx, query, perQuery, "")
+		if err != nil {
+			logger.Warn("Failed to search memories", zap.String("query", query), zap.Error(err))
+			continue
+		}
+		for _, mem := range memories {
+			if seen[mem.Memory.ID] {
+				continue
+			}
+			seen[mem.Memory.ID] = true
+			results = append(results, mem.Memory)
+			logger.Debug("Recalled memory",
+				zap.String("id", mem.Memory.ID),
+				zap.String("type", string(mem.Memory.Type)),
+				zap.String("name", mem.Memory.Name),
+				zap.Float64("score", mem.Score),
+			)
+		}
+	}
+	if len(results) > 0 {
+		logger.Info("Retrieved relevant memories", zap.Int("count", len(results)))
+	}
+	return results
+}
+
+// recallRouterMemories performs targeted memory recall requested by the router,
+// appending any new (deduplicated) memories to the recalled slice.
+func (h *Harness) recallRouterMemories(ctx context.Context, routeResult *agents.RouterResult, recalled *[]*memory.Memory) {
+	if routeResult == nil || !routeResult.NeedMemory || h.memory == nil || len(routeResult.MemoryQueries) == 0 {
+		return
+	}
+	logger.Info("Router requested memory recall", zap.Strings("queries", routeResult.MemoryQueries))
+	additional := h.searchMemories(ctx, 3, routeResult.MemoryQueries...)
+	if len(additional) == 0 {
+		return
+	}
+	existing := make(map[string]bool, len(*recalled))
+	for _, m := range *recalled {
+		existing[m.ID] = true
+	}
+	for _, mem := range additional {
+		if existing[mem.ID] {
+			continue
+		}
+		existing[mem.ID] = true
+		*recalled = append(*recalled, mem)
+		logger.Debug("Additional memory recalled by router",
+			zap.String("query", ""),
+			zap.String("id", mem.ID),
+			zap.String("name", mem.Name),
+		)
+	}
+}
+
+// injectMemories appends recalled memories as a hidden system message when present.
+func (h *Harness) injectMemories(execCtx *model.ExecutionContext, recalled []*memory.Memory) {
+	if execCtx == nil || len(recalled) == 0 {
+		return
+	}
+	execCtx.AddMessage("system", h.buildMemoryContext(recalled), model.MessageTypeHidden)
+	logger.Info("Injected recalled memories into conversation", zap.Int("count", len(recalled)))
+}
+
+// initExecutionContext builds the root execution context, applying request rewriting
+// (conversation compression) when the history is long enough. It returns the context,
+// the original request (for persistence), and whether rewriting happened.
+func (h *Harness) initExecutionContext(ctx context.Context, session *session.Session, request, languageInstr string) (*model.ExecutionContext, string, bool) {
 	rawRequest := request
-	if h.rewriter != nil && !h.config.ConvCompressDisabled && histMsgCount > 2*h.config.ConvCompressRound && len([]rune(session.Conversation.GetText())) >= h.config.ConvCompressLength {
-		// Only rewrite if there's conversation history
+	rewriteRequest := false
+
+	if h.rewriter != nil && !h.config.ConvCompressDisabled &&
+		session.Conversation.MessageCount() > 2*h.config.ConvCompressRound &&
+		len([]rune(session.Conversation.GetText())) >= h.config.ConvCompressLength {
+
 		rewritten, usage, err := h.rewriter.Rewrite(ctx, session.Conversation.GetMessages(), request, languageInstr)
 		if err != nil {
 			logger.Warn("Failed to rewrite request", zap.Error(err))
-			// Fallback to original request on error
 		} else {
 			rewriteRequest = true
 			request = strings.TrimSpace(rewritten)
@@ -490,277 +640,171 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 			if usage != nil {
 				session.AddTokenUsage(usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
 			}
-			currExecCtx = model.NewExecutionContext(session.Name, model.NewInheritConversation(session.Conversation.GetMessages(), h.config.ConvCompressRound), true, "")
+			execCtx := model.NewExecutionContext(session.Name, model.NewInheritConversation(session.Conversation.GetMessages(), h.config.ConvCompressRound), true, "")
+			execCtx.SetMessageType(model.MessageTypeUser)
+			return execCtx, rawRequest, rewriteRequest
 		}
 	}
 
-	if currExecCtx == nil {
-		currExecCtx = model.NewExecutionContext(session.Name, session.Conversation, true, "")
+	execCtx := model.NewExecutionContext(session.Name, session.Conversation, true, "")
+	execCtx.SetMessageType(model.MessageTypeUser)
+	return execCtx, rawRequest, rewriteRequest
+}
+
+// runRouter classifies the current execution context and streams any simple reply.
+// It returns the raw router output and the parsed result.
+func (h *Harness) runRouter(ctx context.Context, session *session.Session, execCtx *model.ExecutionContext, languageInstr string, stream func(string) error) (string, *agents.RouterResult, error) {
+	output, result, usage, err := h.router.AnalyzeStream(ctx, execCtx.Conversation.GetMessages(), languageInstr, execCtx.ActiveSkillContent, stream)
+	if err != nil {
+		return "", nil, fmt.Errorf("analyze current request [%s] fail, error: %s", execCtx.SessionName, err.Error())
 	}
-	currExecCtx.SetMessageType(model.MessageTypeUser)
+	if usage != nil {
+		session.AddTokenUsage(usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
+	}
+	return output, result, nil
+}
 
-	defer func() {
-		// Sync all messages from currExecCtx.Conversation back to session
-		// This handles both the compression case (where currExecCtx has a separate conversation)
-		// and the normal case (where they share the same conversation)
-		if currExecCtx != nil && currExecCtx.Conversation != nil {
-			newMsgs := currExecCtx.Conversation.GetNoInheritMessages()
-			if rewriteRequest {
-				newMsgs = append([]model.Message{
-					{
-						Role:      newMsgs[0].Role,
-						Content:   rawRequest,
-						Timestamp: newMsgs[0].Timestamp,
-						Type:      newMsgs[0].Type,
-					},
-				}, newMsgs[h.config.ConvCompressRound+1:]...)
-			} else {
-				newMsgs = newMsgs[histMsgCount:]
-			}
+// executeTools selects and runs tools/skills for a tool intent.
+// Returns:
+//   - retry: true if a tool failed and the loop should re-classify with "Try some other way."
+//   - done:  true if the context should stop advancing (tool execution count exceeded).
+func (h *Harness) executeTools(ctx context.Context, session *session.Session, execCtx *model.ExecutionContext, routeResult *agents.RouterResult, languageInstr string, stream func(string) error, sendChunk func(model.MessageType) func(string) error) (retry bool, done bool) {
+	toolStream := sendChunk(model.MessageTypeAuto)
+	execCtx.IncrExecCount()
 
-			session.PersistAppendMessages(newMsgs)
+	selectTools, usage, err := h.executorAgent.SelectTool(ctx, execCtx.Conversation.GetMessages(), routeResult.ToolDescription, languageInstr, toolStream)
+	if usage != nil {
+		session.AddTokenUsage(usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
+	}
+	if err != nil {
+		execCtx.AddMessage("assistant", fmt.Sprintf("[%s] select tool failed: %s\n", execCtx.SessionName, err.Error()), model.MessageTypeAuto)
+		return true, false
+	}
+
+	var outputs []string
+	var execError string
+
+	for _, selectTool := range selectTools {
+		if execError != "" {
+			break
 		}
-		h.sessionManager.UpdateSessionMeta(session.ID)
-	}()
+		if selectTool == nil || selectTool.ToolName == "" {
+			execError = fmt.Sprintf("I can't find a avalibale tool descript by %q .", routeResult.ToolDescription)
+			break
+		}
 
-	requestMsgType := model.MessageTypeUser
+		// A skill just activates and injects its instructions; it is not executed as a tool.
+		if selectTool.IsSkill {
+			execCtx.ActiveSkill = selectTool.ToolName
+			execCtx.ActiveSkillPath = selectTool.SkillPath
+			execCtx.ActiveSkillContent = selectTool.SkillContent
+			logger.Info("Skill activated", zap.String("skill", selectTool.ToolName), zap.String("path", selectTool.SkillPath))
+			continue
+		}
 
-	finished := false
+		toolResult, execErr := h.executor.ExecuteWithStream(ctx, selectTool.ToolName, selectTool.ToolArgs, execCtx.ActiveSkillPath, toolStream)
+		if execErr != nil && toolResult != nil && toolResult.Error == "" {
+			toolResult.Error = execErr.Error()
+		}
+		if toolResult != nil && toolResult.Usage != nil {
+			session.AddTokenUsage(toolResult.Usage.PromptTokens, toolResult.Usage.CompletionTokens, toolResult.Usage.TotalTokens)
+		}
+		if toolResult != nil && !toolResult.Success {
+			execError = fmt.Sprintf("Execute tool '%s', end error: %s", selectTool.ToolName, toolResult.Error)
+			break
+		}
+		if toolResult != nil && toolResult.Output != "" {
+			outputs = append(outputs, toolResult.Output)
+		}
+	}
 
-	for !finished {
-		// Create sendChunk bound to current execution context
-		sendChunk := createSendChunk(currExecCtx.GetMessageType())
-		if !finished {
-			if len(request) > 0 {
-				currExecCtx.AddMessage("user", request, requestMsgType)
-			}
+	if execError != "" {
+		execCtx.AddMessage("assistant", execError, model.MessageTypeAuto)
+		if execCtx.ShouldSkipExec() {
+			// Too many failed attempts; surface the error and stop advancing this context.
+			return false, true
+		}
+		return true, false
+	}
 
-			// Use streaming analysis which will stream simple responses in real-time
-			var routeAgentOutput string
-			var routeResult *agents.RouterResult
-			var usage *llm.Usage
-			var err error
+	execCtx.ResetExecCount()
 
-			// Use streaming analysis which will stream simple responses in real-time
-			routeAgentOutput, routeResult, usage, err = h.router.AnalyzeStream(ctx, currExecCtx.Conversation.GetMessages(), languageInstr, currExecCtx.ActiveSkillContent, sendChunk)
-			if err != nil {
-				return "", fmt.Errorf("analyze current request [%s] fail, error: %s", request, err.Error())
-			}
+	if len(outputs) == 0 {
+		// Only skills were activated (or no output); loop again on the same context.
+		return false, false
+	}
+
+	combined := strings.Join(outputs, "\n\n---\n\n")
+	if len([]rune(combined)) < 512 {
+		execCtx.AddMessage("tool", combined, model.MessageTypeAuto)
+		return false, false
+	}
+
+	// Long tool output: stream an organized summary instead of the raw blob.
+	messages := execCtx.Conversation.GetNoInheritMessages()
+	reorgMsgs := make([]model.Message, len(messages), len(messages)+1)
+	copy(reorgMsgs, messages)
+	organized, usage, err := h.organizer.Organize(ctx, append(reorgMsgs, model.Message{
+		Role:      "assistant",
+		Content:   combined,
+		Timestamp: time.Now(),
+		Type:      model.MessageTypeHidden,
+	}), languageInstr, stream)
+	if err != nil {
+		execCtx.AddMessage("tool", combined, model.MessageTypeAuto)
+		return false, false
+	}
+	if usage != nil {
+		session.AddTokenUsage(usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
+	}
+	execCtx.AddMessage("tool", organized, model.MessageTypeAuto)
+	return false, false
+}
+
+// mergeSubTaskResult folds a completed sub-task execution context back into its parent,
+// summarizing the sub-task conversation when it is long enough, and returns the parent
+// context along with the next resolution request to evaluate on it.
+func (h *Harness) mergeSubTaskResult(ctx context.Context, session *session.Session, languageInstr string, parentExecCtx, childExecCtx *model.ExecutionContext, sendChunk func(model.MessageType) func(string) error) (*model.ExecutionContext, string) {
+	summarized := false
+	if !h.config.ConvCompressDisabled &&
+		childExecCtx.Conversation.NoInheritMessageCount() >= h.config.ConvCompressRound*2 &&
+		childExecCtx.Conversation.NoInheritMessageTextLength() >= h.config.ConvCompressLength {
+
+		stream := sendChunk(childExecCtx.GetMessageType())
+		summary, usage, err := h.summarizer.Summarize(ctx, childExecCtx.Conversation.GetMessages(), languageInstr, stream)
+		if err == nil && len(summary) > 0 {
 			if usage != nil {
 				session.AddTokenUsage(usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
 			}
-
-			// Step 2: If router indicates need for memory, perform targeted memory recall
-			if routeResult.NeedMemory && h.memory != nil && len(routeResult.MemoryQueries) > 0 {
-				logger.Info("Router requested memory recall", zap.Strings("queries", routeResult.MemoryQueries))
-				for _, query := range routeResult.MemoryQueries {
-					memories, err := h.memory.SearchMemories(ctx, query, 3, "")
-					if err != nil {
-						logger.Warn("Failed to search memory by router query", zap.String("query", query), zap.Error(err))
-						continue
-					}
-					// Add new memories to recalled list (avoid duplicates)
-					existingIDs := make(map[string]bool)
-					for _, m := range recalledMemories {
-						existingIDs[m.ID] = true
-					}
-					for _, mem := range memories {
-						if !existingIDs[mem.Memory.ID] {
-							recalledMemories = append(recalledMemories, mem.Memory)
-							existingIDs[mem.Memory.ID] = true
-							logger.Debug("Additional memory recalled by router",
-								zap.String("query", query),
-								zap.String("id", mem.Memory.ID),
-								zap.String("name", mem.Memory.Name),
-							)
-						}
-					}
-				}
-			}
-
-			// Inject recalled memories into execution context if any
-			if len(recalledMemories) > 0 && currExecCtx != nil {
-				memoryContext := h.buildMemoryContext(recalledMemories)
-				// Add as a hidden system message to provide context
-				currExecCtx.AddMessage("system", memoryContext, model.MessageTypeHidden)
-				logger.Info("Injected recalled memories into conversation", zap.Int("count", len(recalledMemories)))
-			}
-
-			switch routeResult.Intent {
-			case agents.IntentFinished:
-				finished = true
-			case agents.IntentStepByStep:
-				session.ExecCtxStack.Push(currExecCtx)
-				// Create new execution context for sub-task - this is auto process
-				currExecCtx = model.NewExecutionContext(currExecCtx.SessionName, model.NewInheritConversation(currExecCtx.Conversation.GetMessages(), 0), false, routeResult.RemainingPlan)
-				currExecCtx.SetMessageType(model.MessageTypeAuto)
-				request, requestMsgType = routeResult.CurrentStep, model.MessageTypeHidden
-				continue
-			case agents.IntentTool:
-				_sendChunk := createSendChunk(model.MessageTypeAuto)
-				currExecCtx.IncrExecCount()
-				// Execute tool selection with streaming output
-				selectTools, usage, err := h.executorAgent.SelectTool(
-					ctx,
-					currExecCtx.Conversation.GetMessages(),
-					routeResult.ToolDescription,
-					languageInstr,
-					_sendChunk,
-				)
-				if usage != nil {
-					session.AddTokenUsage(usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
-				}
-				if err != nil {
-					return "", fmt.Errorf("[%s] select tool failed: %s\n", currExecCtx.SessionName, err.Error())
-				}
-
-				// Collect outputs from all tool executions
-				var allToolOutputs []string
-				var execError string
-
-				for _, selectTool := range selectTools {
-					var toolResult *tool.ToolResult
-					if execError != "" {
-						break
-					}
-					if selectTool == nil || selectTool.ToolName == "" {
-						execError = fmt.Sprintf("I can't find a avalibale tool descript by %q .", routeResult.ToolDescription)
-						break
-					}
-
-					// Check if selected item is a skill
-					if selectTool.IsSkill {
-						currExecCtx.ActiveSkill = selectTool.ToolName
-						currExecCtx.ActiveSkillPath = selectTool.SkillPath
-						currExecCtx.ActiveSkillContent = selectTool.SkillContent
-						logger.Info("Skill activated", zap.String("skill", selectTool.ToolName), zap.String("path", selectTool.SkillPath))
-						continue
-					}
-
-					// Execute tool with streaming output for better UX
-					toolResult, err = h.executor.ExecuteWithStream(ctx, selectTool.ToolName, selectTool.ToolArgs, currExecCtx.ActiveSkillPath, _sendChunk)
-					if err != nil && toolResult != nil && toolResult.Error == "" {
-						toolResult.Error = err.Error()
-					}
-					if toolResult != nil && toolResult.Usage != nil {
-						session.AddTokenUsage(toolResult.Usage.PromptTokens, toolResult.Usage.CompletionTokens, toolResult.Usage.TotalTokens)
-					}
-
-					if toolResult != nil && !toolResult.Success {
-						execError = fmt.Sprintf("Execute tool '%s', end error: %s", selectTool.ToolName, toolResult.Error)
-						break
-					}
-
-					if toolResult != nil && toolResult.Output != "" {
-						allToolOutputs = append(allToolOutputs, toolResult.Output)
-					}
-				}
-
-				if len(execError) > 0 {
-					if currExecCtx.ShouldSkipExec() {
-						currExecCtx.AddMessage("assistant", execError, model.MessageTypeAuto)
-						break
-					}
-					currExecCtx.AddMessage("assistant", execError, model.MessageTypeAuto)
-					request, requestMsgType = "Try some other way.", model.MessageTypeHidden
-					continue
-				}
-
-				currExecCtx.ResetExecCount()
-
-				if len(allToolOutputs) == 0 {
-					// No tools were executed (e.g., only skills activated)
-					continue
-				}
-
-				// Join all tool outputs
-				combinedOutput := strings.Join(allToolOutputs, "\n\n---\n\n")
-
-				if len([]rune(combinedOutput)) < 512 {
-					currExecCtx.AddMessage("assistant", combinedOutput, model.MessageTypeAuto)
-				} else {
-					// Stream organizer output for long tool results
-					messages := currExecCtx.Conversation.GetNoInheritMessages()
-					toReorgMsgs := make([]model.Message, len(messages), len(messages)+1)
-					copy(toReorgMsgs, messages)
-					organized, usage, err := h.organizer.Organize(ctx, append(toReorgMsgs, model.Message{
-						Role:      "assistant",
-						Content:   combinedOutput,
-						Timestamp: time.Now(),
-						Type:      model.MessageTypeHidden,
-					}), languageInstr, sendChunk)
-					if err != nil {
-						return "", err
-					}
-					if usage != nil {
-						session.AddTokenUsage(usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
-					}
-					currExecCtx.AddMessage("assistant", organized, model.MessageTypeAuto)
-				}
-			case agents.IntentSimple:
-				// Simple response was already streamed in real-time via AnalyzeStream
-				if routeResult.SimpleReply == "" {
-					break
-				}
-				currExecCtx.AddMessage("assistant", routeResult.SimpleReply, currExecCtx.DefaultMsgType)
-				fallthrough
-			case agents.IntentUnknown:
-				fallthrough
-			default:
-				if routeResult.Intent != agents.IntentSimple {
-					currExecCtx.AddMessage("assistant", routeAgentOutput, model.MessageTypeHidden)
-				}
-				request, requestMsgType = "Check if all requirements are fully resolved.", model.MessageTypeHidden
-				continue
-			}
-		}
-
-		parentExecCtx := session.ExecCtxStack.Pop()
-		if parentExecCtx != nil {
-			var summarized bool
-			if !h.config.ConvCompressDisabled && currExecCtx.Conversation.NoInheritMessageCount() >= h.config.ConvCompressRound*2 && currExecCtx.Conversation.NoInheritMessageTextLength() >= h.config.ConvCompressLength {
-				// compress sub task's conversation - stream summary
-				summary, usage, err := h.summarizer.Summarize(ctx, currExecCtx.Conversation.GetMessages(), languageInstr, sendChunk)
-				if err == nil && len(summary) > 0 {
-					if usage != nil {
-						session.AddTokenUsage(usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
-					}
-					parentExecCtx.AddMessage("assistant", summary, model.MessageTypeAuto)
-					summarized = true
-				}
-			}
-			if !summarized {
-				var _sendChunk func(string) error
-				if parentExecCtx.IsUserQuery {
-					_sendChunk = createSendChunk(model.MessageTypeUser)
-				}
-				for _, msg := range currExecCtx.Conversation.GetNoInheritMessages() {
-					if msg.Role == "user" && msg.Content == "Check if requirements are fully resolved." {
-						continue
-					}
-					parentExecCtx.AddMessage(msg.Role, msg.Content, msg.Type)
-					if _sendChunk != nil && msg.Type != model.MessageTypeHidden {
-						_sendChunk(msg.Content)
-					}
-				}
-			}
-			request, requestMsgType = "Check if requirements are fully resolved.", model.MessageTypeHidden
-			if currExecCtx.RemainingPlan != "" {
-				request = currExecCtx.RemainingPlan
-			}
-			currExecCtx = parentExecCtx
+			parentExecCtx.AddMessage("assistant", summary, model.MessageTypeAuto)
+			summarized = true
 		}
 	}
 
-	finalAssistMsg := currExecCtx.FinalAssistantMsg()
-
-	// Save important information to memory after request processing
-	if h.memory != nil && finalAssistMsg.Content != "" {
-		// Use LLM to extract memory-worthy information from the conversation
-		h.extractMemoriesFromConversation(ctx, currExecCtx.Conversation.GetMessages())
+	if !summarized {
+		var stream func(string) error
+		if parentExecCtx.IsUserQuery {
+			stream = sendChunk(model.MessageTypeUser)
+		}
+		for _, msg := range childExecCtx.Conversation.GetNoInheritMessages() {
+			if msg.Role == "user" && msg.Content == "Check if requirements are fully resolved." {
+				continue
+			}
+			parentExecCtx.AddMessage(msg.Role, msg.Content, msg.Type)
+			if stream != nil && msg.Type != model.MessageTypeHidden {
+				stream(msg.Content)
+			}
+		}
 	}
 
-	return finalAssistMsg.Content, nil
+	// Continue resolution on the parent with its remaining plan (if any).
+	var nextRequest string
+	if childExecCtx.RemainingPlan != "" {
+		nextRequest = childExecCtx.RemainingPlan
+	} else {
+		nextRequest = "Check if all requirements are fully resolved."
+	}
+	return parentExecCtx, nextRequest
 }
 
 // GetSessionManager returns the session manager

@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from 'react'
+import React, { memo, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Copy, Check } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
@@ -63,7 +63,20 @@ MarkdownRenderer.displayName = 'MarkdownRenderer'
 const AutoMessageContent = memo(({ msg }) => (
   <div className="thought-box">
     <div className="thought-content">
-      <MarkdownRenderer content={msg.content} isStreaming={msg.streaming} />
+      {msg.streaming && !msg.content ? (
+        <span className="waiting-response">
+          <span className="thinking-animation">
+            <span className="dot"></span>
+            <span className="dot"></span>
+            <span className="dot"></span>
+          </span>
+        </span>
+      ) : (
+        <>
+          <MarkdownRenderer content={msg.content} isStreaming={msg.streaming} />
+          {msg.streaming && <span className="streaming-cursor streaming-cursor--thought" aria-hidden="true" />}
+        </>
+      )}
       {msg.streaming && (
         <div className="streaming-animation-indicator">
           <div className="thinking-animation">
@@ -80,6 +93,76 @@ const AutoMessageContent = memo(({ msg }) => (
 AutoMessageContent.displayName = 'AutoMessageContent'
 
 /**
+ * deriveToolTitle - 从工具返回内容中推导一个简短标题，用于折叠态展示。
+ * 优先取第一行非空内容（去掉首尾空白与包裹字符），过长则截断。
+ */
+function deriveToolTitle(content) {
+  if (!content) return ''
+  const firstLine = content
+    .split('\n')
+    .map(l => l.trim())
+    .find(l => l.length > 0)
+  if (!firstLine) return ''
+  const cleaned = firstLine.replace(/^[{["'`]+|["'`}]+$/g, '').trim()
+  return cleaned.length > 80 ? cleaned.slice(0, 80) + '…' : cleaned
+}
+
+/**
+ * ToolMessageContent - 工具返回气泡，默认折叠，仅展示工具名称/标题，可展开查看完整结果。
+ */
+const ToolMessageContent = memo(({ msg, t }) => {
+  const [expanded, setExpanded] = useState(false)
+  const title = deriveToolTitle(msg.content)
+
+  return (
+    <div className={`tool-result ${expanded ? 'expanded' : 'collapsed'}`}>
+      <button
+        className="tool-result-header"
+        onClick={() => setExpanded(prev => !prev)}
+        aria-expanded={expanded}
+      >
+        <span className="tool-result-icon">🔧</span>
+        <span className="tool-result-title">
+          {title || t('chat.toolResult')}
+        </span>
+        <span className="tool-result-toggle">
+          {expanded ? '▼' : '▶'}
+        </span>
+      </button>
+      {expanded && (
+        <div className="tool-result-body">
+          {msg.streaming && !msg.content ? (
+            <span className="waiting-response">
+              <span className="thinking-animation">
+                <span className="dot"></span>
+                <span className="dot"></span>
+                <span className="dot"></span>
+              </span>
+            </span>
+          ) : (
+            <>
+              <MarkdownRenderer content={msg.content} isStreaming={msg.streaming} />
+              {msg.streaming && <span className="streaming-cursor streaming-cursor--thought" aria-hidden="true" />}
+            </>
+          )}
+          {msg.streaming && (
+            <div className="streaming-animation-indicator">
+              <div className="thinking-animation">
+                <span className="dot"></span>
+                <span className="dot"></span>
+                <span className="dot"></span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+})
+
+ToolMessageContent.displayName = 'ToolMessageContent'
+
+/**
  * MessageBubble - 单个消息气泡，使用 React.memo 避免不必要的重渲染
  *
  * 比较策略：
@@ -92,6 +175,7 @@ const MessageBubble = memo(({
   isUserMessage,
   isBotMessage,
   isAutoAsBot,
+  isToolMessage,
   followingAutoMessages,
   copiedMessageId,
   onCopy,
@@ -125,26 +209,40 @@ const MessageBubble = memo(({
 
   return (
     <div
-      className={`message ${isUserMessage ? 'user' : 'bot'} ${msg.streaming ? 'streaming' : ''}`}
+      className={`message ${isUserMessage ? 'user' : isToolMessage ? 'tool' : 'bot'} ${msg.streaming ? 'streaming' : ''}`}
     >
       <div className="message-avatar">
-        {isUserMessage ? '👤' : '🤖'}
+        {isUserMessage ? '👤' : isToolMessage ? '🔧' : '🤖'}
       </div>
       <div className="message-content">
-        {isAutoAsBot ? (
+        {isToolMessage ? (
+          <ToolMessageContent msg={msg} t={t} />
+        ) : isAutoAsBot ? (
           <AutoMessageContent msg={msg} />
         ) : (
           <>
             <div className="message-text">
-              {msg.streaming ? (
-                <MarkdownRenderer content={msg.content} isStreaming={true} />
-              ) : isUserMessage ? (
+              {isUserMessage ? (
                 msg.content
+              ) : msg.streaming && !msg.content ? (
+                <span className="waiting-response">
+                  <span className="thinking-animation">
+                    <span className="dot"></span>
+                    <span className="dot"></span>
+                    <span className="dot"></span>
+                  </span>
+                  <span className="waiting-response-text">{t('chat.waitingResponse')}</span>
+                </span>
+              ) : msg.streaming ? (
+                <>
+                  <MarkdownRenderer content={msg.content} isStreaming={true} />
+                  <span className="streaming-cursor" aria-hidden="true" />
+                </>
               ) : (
                 <MarkdownRenderer content={msg.content} isStreaming={false} />
               )}
             </div>
-            {isStreaming && (
+            {isStreaming && msg.content && (
               <div className="streaming-animation-indicator">
                 <div className="thinking-animation">
                   <span className="dot"></span>
@@ -174,6 +272,7 @@ const MessageBubble = memo(({
   if (prevProps.msg.streaming !== nextProps.msg.streaming) return false
   if (prevProps.isStreaming !== nextProps.isStreaming) return false
   if (prevProps.copiedMessageId !== nextProps.copiedMessageId) return false
+  if (prevProps.isToolMessage !== nextProps.isToolMessage) return false
   // followingAutoMessages 可能变化，浅比较
   if (prevProps.followingAutoMessages !== nextProps.followingAutoMessages) return false
   return true // 跳过重渲染

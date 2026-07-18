@@ -182,6 +182,12 @@ const ChatBox = memo(({
         } else {
           currentGroup = { message: msg, autoMessages: [], isAutoAsBot: true }
         }
+      } else if (msg.role === 'tool') {
+        // Tool results are displayed as independent bubbles, separate from assistant.
+        if (currentGroup) {
+          groups.push(currentGroup)
+        }
+        currentGroup = { message: msg, autoMessages: [], isToolMessage: true }
       } else {
         if (currentGroup) {
           groups.push(currentGroup)
@@ -212,6 +218,7 @@ const ChatBox = memo(({
           isUserMessage={isUserMessage}
           isBotMessage={isBotMessage}
           isAutoAsBot={group.isAutoAsBot}
+          isToolMessage={group.isToolMessage}
           followingAutoMessages={group.autoMessages}
           copiedMessageId={copiedMessageId}
           onCopy={handleCopy}

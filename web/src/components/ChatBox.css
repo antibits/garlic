@@ -73,11 +73,8 @@
   gap: 12px;
   margin-bottom: 24px;
   animation: fadeIn 0.3s ease;
-  /* 性能优化：允许浏览器跳过离屏消息的渲染 */
-  content-visibility: auto;
-  contain-intrinsic-size: auto 120px;
-  /* 提示浏览器该元素内部变化不会影响外部布局 */
-  contain: layout style paint;
+  /* 性能优化：仅隔离内部布局，不影响外部，且不裁剪溢出内容（如气泡外发光） */
+  contain: layout style;
 }
 
 @keyframes fadeIn {
@@ -115,6 +112,7 @@
   display: flex;
   flex-direction: column;
   max-width: 70%;
+  min-width: 0;
 }
 
 .message.user .message-content {
@@ -148,6 +146,7 @@
   background: var(--bg-secondary);
   color: var(--text-primary);
   border-bottom-left-radius: 4px;
+  transition: background 0.3s ease, box-shadow 0.3s ease;
 }
 
 /* 移除 white-space: pre-wrap，让 Markdown 自行处理 */
@@ -155,9 +154,92 @@
   white-space: normal;
 }
 
+/* 流式中的气泡：左侧高亮，提示正在生成 */
+.message.bot.streaming .message-text {
+  border-left: 3px solid var(--primary-color);
+  box-shadow: 0 0 0 1px rgba(76, 175, 80, 0.12);
+  min-height: 24px;
+}
+
+[data-theme='dark'] .message.bot.streaming .message-text {
+  box-shadow: 0 0 0 1px rgba(0, 122, 204, 0.18);
+}
+
 /* Markdown 容器 */
 .message-text .react-markdown {
   line-height: 1.5;
+}
+
+/* 工具返回气泡：默认折叠，仅展示工具名称 */
+.message.tool .message-content {
+  max-width: 85%;
+}
+
+.tool-result {
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--bg-tertiary, #f7f9fc);
+}
+
+.tool-result.collapsed {
+  /* 折叠态更紧凑 */
+}
+
+.tool-result-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.tool-result-header:hover {
+  background: var(--bg-hover, rgba(0, 0, 0, 0.04));
+}
+
+.tool-result-icon {
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+.tool-result-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.tool-result-toggle {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--text-secondary, #64748b);
+}
+
+.tool-result-body {
+  padding: 0 14px 12px;
+  border-top: 1px solid var(--border-color, #e2e8f0);
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.tool-result-body .react-markdown {
+  line-height: 1.5;
+}
+
+[data-theme='dark'] .tool-result {
+  background: var(--bg-tertiary, #1e293b);
+}
+
+[data-theme='dark'] .tool-result-header:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
 }
 
 /* 段落 - 减小间距 */
@@ -401,21 +483,6 @@
 .message.streaming .message-text {
   position: relative;
   scroll-behavior: smooth;
-}
-
-.cursor {
-  display: inline-block;
-  animation: blink 1s infinite;
-  color: var(--primary-color);
-}
-
-@keyframes blink {
-  0%, 50% {
-    opacity: 1;
-  }
-  51%, 100% {
-    opacity: 0;
-  }
 }
 
 .message-meta {
@@ -754,21 +821,20 @@
 
 /* Streaming 动画指示器 - 紧贴气泡底部 */
 .streaming-animation-indicator {
-  padding: 4px 8px;
-  margin-top: -8px;
+  padding: 2px 2px 0;
+  margin-top: 6px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  position: sticky;
-  bottom: 0;
   z-index: 5;
   background: transparent;
 }
 
 .thought-box .streaming-animation-indicator {
-  margin-top: 0;
-  padding: 8px 12px;
+  margin-top: 8px;
+  padding: 4px 0 0;
   background: transparent;
+  border-top: 1px solid var(--border-color);
   border-bottom-left-radius: 8px;
   border-bottom-right-radius: 8px;
 }
@@ -776,35 +842,81 @@
 .thinking-animation {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
+  gap: 5px;
+  padding: 2px 0;
   background: transparent;
   border-radius: 12px;
 }
 
 .thinking-animation .dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--primary-color);
   animation: pulse-better 1.4s infinite ease-in-out;
 }
 
 .thinking-animation .dot:nth-child(2) {
-  animation-delay: 0.15s;
+  animation-delay: 0.2s;
 }
 
 .thinking-animation .dot:nth-child(3) {
-  animation-delay: 0.3s;
+  animation-delay: 0.4s;
 }
 
 @keyframes pulse-better {
-  0%, 100% {
-    transform: scale(0.1) translateY(0);
+  0%, 80%, 100% {
+    transform: scale(0.6);
     opacity: 0.4;
   }
-  50% {
-    transform: scale(1.5) translateY(-3px);
+  40% {
+    transform: scale(1);
     opacity: 1;
+  }
+}
+
+/* 等待后端响应占位（气泡无内容时） */
+.waiting-response {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  color: var(--text-secondary);
+}
+
+.waiting-response-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+  animation: waiting-fade 1.6s ease-in-out infinite;
+}
+
+@keyframes waiting-fade {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* 流式文本末尾的闪烁光标 */
+.streaming-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  border-radius: 1px;
+  background: var(--primary-color);
+  animation: blink-cursor 1s steps(1, end) infinite;
+}
+
+/* 思考框内的光标颜色稍淡 */
+.streaming-cursor--thought {
+  background: var(--text-secondary);
+}
+
+@keyframes blink-cursor {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
   }
 }

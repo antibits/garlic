@@ -32,6 +32,7 @@
     "stop": "Stop",
     "stopGenerating": "Stop generating",
     "thinking": "Thinking...",
+    "waitingResponse": "Waiting for response...",
     "error": "❌ Error: {{error}}",
     "tips": {
       "multiTurn": "💡 Supports multi-turn conversation with automatic context association",
@@ -41,7 +42,8 @@
     "codeBlock": {
       "copy": "Copy"
     },
-    "scrollToBottom": "Scroll to bottom"
+    "scrollToBottom": "Scroll to bottom",
+    "toolResult": "Tool result"
   },
   "session": {
     "title": "Sessions",

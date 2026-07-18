@@ -37,7 +37,11 @@ func (m *Message) ToOpenAIMessage() openai.ChatCompletionMessageParamUnion {
 	case "system":
 		return openai.SystemMessage(m.Content)
 	case "tool":
-		return openai.ToolMessage(m.ToolCallID, m.Content)
+		if m.ToolCallID != "" {
+			return openai.ToolMessage(m.ToolCallID, m.Content)
+		}
+		// Self-executed tool results (no native tool call) are fed back as user content.
+		return openai.UserMessage(m.Content)
 	default:
 		return openai.UserMessage(m.Content)
 	}
@@ -213,31 +217,31 @@ func (c *Conversation) GetGroupedMessagesForUI() []MessageGroup {
 // ExecutionContext represents a sub-task execution context
 // Used for nested sub-task handling (context stack)
 type ExecutionContext struct {
-	SessionName       string
-	Conversation      *Conversation
-	IsUserQuery       bool
-	CurrExecCount     int         // 当前任务重复执行次数
-	MaxExecCount      int         // 最大执行次数限制
-	DefaultMsgType    MessageType // Current message type being processed
-	RemainingPlan     string      // step by step remaining plan
-	ActiveSkill       string      // Currently active skill name (if any)
-	ActiveSkillPath   string      // Directory path of the active skill (if any)
-	ActiveSkillContent string     // Content of the active skill (if any)
+	SessionName        string
+	Conversation       *Conversation
+	IsUserQuery        bool
+	CurrExecCount      int         // 当前任务重复执行次数
+	MaxExecCount       int         // 最大执行次数限制
+	DefaultMsgType     MessageType // Current message type being processed
+	RemainingPlan      string      // step by step remaining plan
+	ActiveSkill        string      // Currently active skill name (if any)
+	ActiveSkillPath    string      // Directory path of the active skill (if any)
+	ActiveSkillContent string      // Content of the active skill (if any)
 }
 
 // NewExecutionContext creates a new execution context
 func NewExecutionContext(sessName string, conversation *Conversation, isUserQuery bool, remainingPlan string) *ExecutionContext {
 	return &ExecutionContext{
-		SessionName:       sessName,
-		Conversation:      conversation,
-		IsUserQuery:       isUserQuery,
-		CurrExecCount:     0,
-		MaxExecCount:      3,               // 默认最多执行 3 次
-		DefaultMsgType:    MessageTypeUser, // Default to user triggered
-		RemainingPlan:     remainingPlan,
-		ActiveSkill:       "",              // No active skill by default
-		ActiveSkillPath:   "",              // No active skill path by default
-		ActiveSkillContent: "",             // No active skill content by default
+		SessionName:        sessName,
+		Conversation:       conversation,
+		IsUserQuery:        isUserQuery,
+		CurrExecCount:      0,
+		MaxExecCount:       3,               // 默认最多执行 3 次
+		DefaultMsgType:     MessageTypeUser, // Default to user triggered
+		RemainingPlan:      remainingPlan,
+		ActiveSkill:        "", // No active skill by default
+		ActiveSkillPath:    "", // No active skill path by default
+		ActiveSkillContent: "", // No active skill content by default
 	}
 }
 
