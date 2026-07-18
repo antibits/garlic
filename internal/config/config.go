@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -46,7 +47,7 @@ type ConversationCompressConfig struct {
 // SpladeConfig holds configuration for SPLADE vector model
 type SpladeConfig struct {
 	ModelName       string `yaml:"model_name"`
-	Source          string `yaml:"source"`           // modelscope or huggingface
+	Source          string `yaml:"source"` // modelscope or huggingface
 	CacheDir        string `yaml:"cache_dir"`
 	AutoDownload    bool   `yaml:"auto_download"`
 	DownloadTimeout int    `yaml:"download_timeout"` // seconds
@@ -83,29 +84,29 @@ type MemoryStorageConfig struct {
 
 // MemoryConfig holds configuration for the memory system
 type MemoryConfig struct {
-	Enabled          bool                `yaml:"enabled"`
-	Splade           SpladeConfig        `yaml:"splade"`
-	Qdrant           QdrantConfig        `yaml:"qdrant"`
-	Storage          MemoryStorageConfig `yaml:"storage"`
-	CleanupInterval  int                 `yaml:"cleanup_interval"`   // Cleanup interval in days, 0 means disable
-	MaxInactiveDays  int                 `yaml:"max_inactive_days"`  // Delete memories not accessed for this many days
+	Enabled         bool                `yaml:"enabled"`
+	Splade          SpladeConfig        `yaml:"splade"`
+	Qdrant          QdrantConfig        `yaml:"qdrant"`
+	Storage         MemoryStorageConfig `yaml:"storage"`
+	CleanupInterval int                 `yaml:"cleanup_interval"`  // Cleanup interval in days, 0 means disable
+	MaxInactiveDays int                 `yaml:"max_inactive_days"` // Delete memories not accessed for this many days
 }
 
 // Config holds the entire application configuration
 type Config struct {
-	Models        map[string]ModelConfig            `yaml:"models"`
-	Agents        map[string]AgentConfig            `yaml:"agents"`
-	Tools         struct {
-		PythonPath          string `yaml:"python_path"`
-		ToolsDir            string `yaml:"tools_dir"`
-		SkillsDir           string `yaml:"skills_dir"`
-		DefaultTimeout      int    `yaml:"default_timeout"`       // Default tool execution timeout in seconds (default: 300 = 5 minutes)
+	Models map[string]ModelConfig `yaml:"models"`
+	Agents map[string]AgentConfig `yaml:"agents"`
+	Tools  struct {
+		PythonPath     string `yaml:"python_path"`
+		ToolsDir       string `yaml:"tools_dir"`
+		SkillsDir      string `yaml:"skills_dir"`
+		DefaultTimeout int    `yaml:"default_timeout"` // Default tool execution timeout in seconds (default: 300 = 5 minutes)
 	} `yaml:"tools"`
-	ToolGenerator  ToolGeneratorConfig `yaml:"tool_generator,omitempty"`
+	ToolGenerator  ToolGeneratorConfig        `yaml:"tool_generator,omitempty"`
 	ConvCompress   ConversationCompressConfig `yaml:"conversation_compress"`
-	Memory         MemoryConfig `yaml:"memory"`
-	DisabledTools  []string `yaml:"disabled_tools,omitempty"`
-	DisabledSkills []string `yaml:"disabled_skills,omitempty"`
+	Memory         MemoryConfig               `yaml:"memory"`
+	DisabledTools  []string                   `yaml:"disabled_tools,omitempty"`
+	DisabledSkills []string                   `yaml:"disabled_skills,omitempty"`
 }
 
 // Load reads and parses the configuration file
@@ -199,6 +200,17 @@ func Load(path string) (*Config, error) {
 			model.BaseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 		}
 		cfg.Models[name] = model
+	}
+
+	// Resolve relative tools_dir/skills_dir against the config file's directory
+	// so the executor no longer depends on the process working directory.
+	if cfgDir, err := filepath.Abs(filepath.Dir(path)); err == nil {
+		if !filepath.IsAbs(cfg.Tools.ToolsDir) {
+			cfg.Tools.ToolsDir = filepath.Join(cfgDir, cfg.Tools.ToolsDir)
+		}
+		if !filepath.IsAbs(cfg.Tools.SkillsDir) {
+			cfg.Tools.SkillsDir = filepath.Join(cfgDir, cfg.Tools.SkillsDir)
+		}
 	}
 
 	return &cfg, nil

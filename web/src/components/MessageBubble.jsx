@@ -112,7 +112,7 @@ function deriveToolTitle(content) {
  */
 const ToolMessageContent = memo(({ msg, t }) => {
   const [expanded, setExpanded] = useState(false)
-  const title = deriveToolTitle(msg.content)
+  const title = msg.toolName || deriveToolTitle(msg.content)
 
   return (
     <div className={`tool-result ${expanded ? 'expanded' : 'collapsed'}`}>
@@ -123,7 +123,10 @@ const ToolMessageContent = memo(({ msg, t }) => {
       >
         <span className="tool-result-icon">🔧</span>
         <span className="tool-result-title">
-          {title || t('chat.toolResult')}
+          {msg.toolName && <span className="tool-result-name">{msg.toolName}</span>}
+          <span className="tool-result-subtitle">
+            {msg.toolName ? (deriveToolTitle(msg.content) || t('chat.toolResult')) : (title || t('chat.toolResult'))}
+          </span>
         </span>
         <span className="tool-result-toggle">
           {expanded ? '▼' : '▶'}

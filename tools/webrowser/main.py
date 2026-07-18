@@ -206,12 +206,25 @@ def get_chrome_driver(headless: bool = True, use_profile: bool = True) -> webdri
     }
     chrome_options.add_experimental_option("prefs", prefs)
 
-    chrome_options.binary_location = os.path.join(script_dir, "chrome-win64", "chrome-webrowser.exe")
-    chromedriver_path = os.path.join(script_dir, "chromedriver-win64", "chromedriver.exe")
+    is_windows = os.name == 'nt'
+    if is_windows:
+        chrome_binary = os.path.join(script_dir, "chrome-win64", "chrome-webrowser.exe")
+        chromedriver_path = os.path.join(script_dir, "chromedriver-win64", "chromedriver.exe")
+    elif sys.platform == 'darwin':
+        chrome_app = os.path.join(script_dir, "chrome-mac-arm64", "Google Chrome for Testing.app",
+                                  "Contents", "MacOS", "Google Chrome for Testing")
+        chrome_binary = chrome_app if os.path.exists(chrome_app) else shutil.which("google-chrome") or shutil.which("chromium")
+        chromedriver_path = os.path.join(script_dir, "chromedriver-mac-arm64", "chromedriver")
+    else:
+        chrome_binary = shutil.which("google-chrome") or shutil.which("chromium") or shutil.which("google-chrome-stable")
+        chromedriver_path = shutil.which("chromedriver")
+
+    if chrome_binary:
+        chrome_options.binary_location = chrome_binary
 
     try:
         # 优先使用指定的 ChromeDriver
-        if os.path.exists(chromedriver_path):
+        if chromedriver_path and os.path.exists(chromedriver_path):
             service = Service(chromedriver_path)
             _global_driver = webdriver.Chrome(service=service, options=chrome_options)
         else:

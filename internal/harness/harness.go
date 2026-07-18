@@ -401,23 +401,34 @@ func (h *Harness) sessionWorker(ctx context.Context, s *session.Session) {
 			// 设置取消函数到 session，以便可以通过 API 取消
 			s.SetCurrentCancel(cancel)
 
-			// Process the request with optional streaming
-			result, err := h.processRequestForSession(reqCtx, s, input.Request, input.StreamCtx)
+			// Process the request with optional streaming.
+			err := h.processRequestForSession(reqCtx, s, input.Request, input.StreamCtx)
 
 			// 清除取消函数
 			s.SetCurrentCancel(nil)
 
-			if err != nil {
-				input.Error <- err
-			} else {
-				input.Result <- result
+			// Surface any terminal error through the streaming path so the
+			// consumer (e.g. the web handler) can report it to the client.
+			if err != nil && input.StreamCtx != nil && input.StreamCtx.OnChunk != nil {
+				_ = input.StreamCtx.OnChunk(StreamChunk{
+					Content:     err.Error(),
+					MessageType: input.StreamCtx.MessageType,
+					IsError:     true,
+				})
+			}
+
+			// Signal completion to the consumer.
+			if input.Done != nil {
+				close(input.Done)
 			}
 		}
 	}
 }
 
-// processRequestForSession processes a user request for a specific session
-func (h *Harness) processRequestForSession(ctx context.Context, session *session.Session, request string, streamCtx *session.StreamContext) (string, error) {
+// processRequestForSession processes a user request for a specific session.
+// The final content is streamed to the consumer in real-time via streamCtx.OnChunk,
+// so this returns only an error (or nil on success).
+func (h *Harness) processRequestForSession(ctx context.Context, session *session.Session, request string, streamCtx *session.StreamContext) error {
 	// Detect user language from the original request
 	languageInstr := llm.BuildLanguageInstruction(request)
 
@@ -480,7 +491,7 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 
 		routeOutput, routeResult, err := h.runRouter(ctx, session, currExecCtx, languageInstr, stream)
 		if err != nil {
-			return "", err
+			return err
 		}
 
 		h.recallRouterMemories(ctx, routeResult, &recalledMemories)
@@ -493,7 +504,7 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 			session.ExecCtxStack.Push(currExecCtx)
 			currExecCtx = model.NewExecutionContext(
 				currExecCtx.SessionName,
-				model.NewInheritConversation(currExecCtx.Conversation.GetMessages(), 0),
+				model.NewInheritConversation(currExecCtx.Conversation.GetMessages(), 1),
 				false,
 				routeResult.RemainingPlan,
 			)
@@ -501,7 +512,7 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 			request, requestMsgType = routeResult.CurrentStep, model.MessageTypeHidden
 			continue
 		case agents.IntentTool:
-			retry, done := h.executeTools(ctx, session, currExecCtx, routeResult, languageInstr, stream, sendChunk)
+			retry, done := h.executeTools(ctx, session, currExecCtx, routeResult, languageInstr, stream, streamCtx, sendChunk)
 			if done {
 				break
 			}
@@ -535,14 +546,25 @@ func (h *Harness) processRequestForSession(ctx context.Context, session *session
 		requestMsgType = model.MessageTypeHidden
 	}
 
-	finalAssistMsg := currExecCtx.FinalAssistantMsg()
+	// Top-level task finished: if the last message is a tool result with no
+	// assistant answer, produce a final answer so the user gets a response.
+	if lastMsg, ok := currExecCtx.Conversation.LastMessage(); ok && lastMsg.Role == "tool" {
+		stream := sendChunk(currExecCtx.GetMessageType())
+		finalAnswer, usage, err := h.organizer.Organize(ctx, currExecCtx.Conversation.GetMessages(), languageInstr, stream)
+		if err == nil && finalAnswer != "" {
+			if usage != nil {
+				session.AddTokenUsage(usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
+			}
+			currExecCtx.AddMessage("assistant", finalAnswer, currExecCtx.DefaultMsgType)
+		}
+	}
 
 	// Save important information to memory after request processing.
-	if h.memory != nil && finalAssistMsg.Content != "" {
+	if h.memory != nil {
 		h.extractMemoriesFromConversation(ctx, currExecCtx.Conversation.GetMessages())
 	}
 
-	return finalAssistMsg.Content, nil
+	return nil
 }
 
 // searchMemories queries the memory store for each query, returning unique memories.
@@ -668,11 +690,13 @@ func (h *Harness) runRouter(ctx context.Context, session *session.Session, execC
 // Returns:
 //   - retry: true if a tool failed and the loop should re-classify with "Try some other way."
 //   - done:  true if the context should stop advancing (tool execution count exceeded).
-func (h *Harness) executeTools(ctx context.Context, session *session.Session, execCtx *model.ExecutionContext, routeResult *agents.RouterResult, languageInstr string, stream func(string) error, sendChunk func(model.MessageType) func(string) error) (retry bool, done bool) {
-	toolStream := sendChunk(model.MessageTypeAuto)
+func (h *Harness) executeTools(ctx context.Context, session *session.Session, execCtx *model.ExecutionContext, routeResult *agents.RouterResult, languageInstr string, stream func(string) error, streamCtx *session.StreamContext, sendChunk func(model.MessageType) func(string) error) (retry bool, done bool) {
 	execCtx.IncrExecCount()
 
-	selectTools, usage, err := h.executorAgent.SelectTool(ctx, execCtx.Conversation.GetMessages(), routeResult.ToolDescription, languageInstr, toolStream)
+	// SelectTool only decides which tool to use (function-calling); its streamed
+	// output is internal reasoning, not tool execution. Do not surface it as a
+	// tool message — only the actual ExecuteWithStream output is a tool message.
+	selectTools, usage, err := h.executorAgent.SelectTool(ctx, execCtx.Conversation.GetMessages(), routeResult.ToolDescription, languageInstr)
 	if usage != nil {
 		session.AddTokenUsage(usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
 	}
@@ -702,6 +726,9 @@ func (h *Harness) executeTools(ctx context.Context, session *session.Session, ex
 			continue
 		}
 
+		// Stream each tool chunk tagged with the tool name so the frontend can
+		// render a tool-name header on the bubble.
+		toolStream := h.makeToolStream(streamCtx, selectTool.ToolName)
 		toolResult, execErr := h.executor.ExecuteWithStream(ctx, selectTool.ToolName, selectTool.ToolArgs, execCtx.ActiveSkillPath, toolStream)
 		if execErr != nil && toolResult != nil && toolResult.Error == "" {
 			toolResult.Error = execErr.Error()
@@ -736,7 +763,7 @@ func (h *Harness) executeTools(ctx context.Context, session *session.Session, ex
 
 	combined := strings.Join(outputs, "\n\n---\n\n")
 	if len([]rune(combined)) < 512 {
-		execCtx.AddMessage("tool", combined, model.MessageTypeAuto)
+		execCtx.AddMessage("tool", combined, model.MessageTypeTool)
 		return false, false
 	}
 
@@ -751,14 +778,32 @@ func (h *Harness) executeTools(ctx context.Context, session *session.Session, ex
 		Type:      model.MessageTypeHidden,
 	}), languageInstr, stream)
 	if err != nil {
-		execCtx.AddMessage("tool", combined, model.MessageTypeAuto)
+		execCtx.AddMessage("tool", combined, model.MessageTypeTool)
 		return false, false
 	}
 	if usage != nil {
 		session.AddTokenUsage(usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
 	}
-	execCtx.AddMessage("tool", organized, model.MessageTypeAuto)
+	execCtx.AddMessage("tool", organized, model.MessageTypeTool)
 	return false, false
+}
+
+// makeToolStream returns a StreamCallback that streams tool output chunks tagged
+// with the executing tool's name, so the frontend can show a tool-name header.
+func (h *Harness) makeToolStream(streamCtx *session.StreamContext, toolName string) tool.StreamCallback {
+	if streamCtx == nil || streamCtx.OnChunk == nil {
+		return nil
+	}
+	return func(line string) error {
+		if err := streamCtx.OnChunk(session.StreamChunk{
+			Content:     line,
+			MessageType: string(model.MessageTypeTool),
+			ToolName:    toolName,
+		}); err != nil {
+			logger.Warn("Failed to send tool stream chunk", zap.Error(err))
+		}
+		return nil
+	}
 }
 
 // mergeSubTaskResult folds a completed sub-task execution context back into its parent,

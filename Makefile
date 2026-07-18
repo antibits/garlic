@@ -44,13 +44,36 @@ CHROMEDRIVER_URL = https://cdn.npmmirror.com/binaries/chrome-for-testing/$(CHROM
 
 TARGET = $(BINARY_NAME)$(EXT)
 
+# webrowser 工具独立的 Python 虚拟环境
+WEBEROER_VENV = $(WEBEROER_TOOLS_DIR)/.venv
+ifeq ($(OS),Windows_NT)
+    WEBEROER_VENV_PYTHON = $(WEBEROER_VENV)/Scripts/python.exe
+else
+    WEBEROER_VENV_PYTHON = $(WEBEROER_VENV)/bin/python
+endif
+
 # 默认目标
 .PHONY: all
 all: setup
 
 # 下载并解压 Chrome 和 ChromeDriver
 .PHONY: setup
-setup: download-chrome download-chromedriver build
+setup: download-chrome download-chromedriver setup-webrowser build
+
+# 为 webrowser 工具创建独立 venv 并安装依赖
+.PHONY: setup-webrowser
+setup-webrowser:
+	@if [ -f "$(WEBEROER_VENV_PYTHON)" ]; then \
+		echo "webrowser venv 已存在，跳过创建"; \
+	else \
+		echo "正在为 webrowser 创建 venv..."; \
+		python3 -m venv "$(WEBEROER_VENV)"; \
+		echo "venv 创建完成: $(WEBEROER_VENV)"; \
+	fi
+	@echo "正在安装 webrowser 依赖..."; \
+	"$(WEBEROER_VENV_PYTHON)" -m pip install --upgrade pip; \
+	"$(WEBEROER_VENV_PYTHON)" -m pip install -r "$(WEBEROER_TOOLS_DIR)/requirements.txt"; \
+	echo "webrowser 依赖安装完成"
 
 .PHONY: download-chrome
 download-chrome:
@@ -106,6 +129,7 @@ clean:
 	@if [ -f "$(TARGET)" ]; then rm "$(TARGET)"; fi
 	@if [ -d "web/dist" ]; then rm -rf web/dist; fi
 	@rm -f chrome-*.zip chromedriver-*.zip
+	@if [ -d "$(WEBEROER_VENV)" ]; then rm -rf "$(WEBEROER_VENV)"; fi
 	@echo 清理完成
 
 # 运行项目
@@ -119,7 +143,8 @@ run: build
 help:
 	@echo Garlic Project Makefile
 	@echo 可用目标:
-	@echo   setup            - 下载，解压依赖文件 Chrome 和 ChromeDriver，并完成前后端构建
+	@echo   setup            - 下载，解压依赖文件 Chrome 和 ChromeDriver，创建 webrowser venv 并完成前后端构建
+	@echo   setup-webrowser  - 为 webrowser 工具创建独立 venv 并安装依赖
 	@echo   build-frontend   - 构建前端项目
 	@echo   build-backend    - 构建后端项目
 	@echo   build            - 构建前端和后端（默认）

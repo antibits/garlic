@@ -79,6 +79,7 @@ type ChunkMessage struct {
 	Content     string `json:"content"`
 	Done        bool   `json:"done,omitempty"`
 	MessageType string `json:"message_type,omitempty"` // "user" or "auto"
+	ToolName    string `json:"tool_name,omitempty"`    // tool name for tool messages
 }
 
 // NewServer 创建新的 Web 服务器
@@ -579,8 +580,7 @@ func (s *Server) handleWSMessage(client *WSClient, sess *session.Session, conten
 		}
 	}()
 
-	resultChan := make(chan string, 1)
-	errorChan := make(chan error, 1)
+	doneChan := make(chan struct{})
 
 	// 发送状态消息
 	s.sendWSMessage(client, WSMessage{
@@ -598,10 +598,19 @@ func (s *Server) handleWSMessage(client *WSClient, sess *session.Session, conten
 			// Update current message type from chunk
 			currentMessageType = chunk.MessageType
 
+			if chunk.IsError {
+				s.sendWSMessage(client, WSMessage{
+					Type:    "error",
+					Data:    chunk.Content,
+					Session: client.SessionID,
+				})
+				return nil
+			}
+
 			// responseBuilder.WriteString(chunk.Content)
 			s.sendWSMessage(client, WSMessage{
 				Type:    "chunk",
-				Data:    ChunkMessage{Content: chunk.Content, MessageType: currentMessageType},
+				Data:    ChunkMessage{Content: chunk.Content, MessageType: currentMessageType, ToolName: chunk.ToolName},
 				Session: client.SessionID,
 			})
 			return nil
@@ -612,24 +621,17 @@ func (s *Server) handleWSMessage(client *WSClient, sess *session.Session, conten
 	// 添加到会话输入队列，带流式上下文
 	sess.GetInputChan() <- session.SessionInput{
 		Request:   content,
-		Result:    resultChan,
-		Error:     errorChan,
+		Done:      doneChan,
 		StreamCtx: streamCtx,
 	}
 
-	// 等待结果（带超时）
+	// 等待处理完成（带超时）
 	select {
-	case result := <-resultChan:
+	case <-doneChan:
 		// 发送完成消息，包含最终的消息类型
 		s.sendWSMessage(client, WSMessage{
 			Type:    "message",
-			Data:    ChunkMessage{Content: result, Done: true, MessageType: currentMessageType},
-			Session: client.SessionID,
-		})
-	case err := <-errorChan:
-		s.sendWSMessage(client, WSMessage{
-			Type:    "error",
-			Data:    err.Error(),
+			Data:    ChunkMessage{Content: "", Done: true, MessageType: currentMessageType},
 			Session: client.SessionID,
 		})
 	}
@@ -1306,12 +1308,12 @@ func (s *Server) enableSkill(c *gin.Context) {
 
 // ToolInfo API 响应结构
 type ToolInfo struct {
-	Name        string              `json:"name"`
-	Type        string              `json:"type"`
-	Description string              `json:"description"`
+	Name        string               `json:"name"`
+	Type        string               `json:"type"`
+	Description string               `json:"description"`
 	Parameters  []tool.ParameterInfo `json:"parameters,omitempty"`
-	Enabled     bool                `json:"enabled"`
-	ToolPath    string              `json:"tool_path,omitempty"`
+	Enabled     bool                 `json:"enabled"`
+	ToolPath    string               `json:"tool_path,omitempty"`
 }
 
 // listTools 获取所有工具

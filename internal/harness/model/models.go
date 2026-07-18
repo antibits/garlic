@@ -14,6 +14,8 @@ const (
 	MessageTypeUser MessageType = "user"
 	// MessageTypeAuto indicates a message generated during automatic process/thinking
 	MessageTypeAuto MessageType = "auto"
+	// MessageTypeTool indicates a tool execution result, shown as a separate collapsed bubble
+	MessageTypeTool MessageType = "tool"
 	// MessageTypeHidden indicates a message should not reflect to user.
 	MessageTypeHidden MessageType = "hidden"
 )
@@ -132,6 +134,14 @@ func (c *Conversation) ToOpenAIMessages() []openai.ChatCompletionMessageParamUni
 // MessageCount returns the number of messages
 func (c *Conversation) MessageCount() int {
 	return len(c.messages)
+}
+
+// LastMessage returns the last message in the conversation, or false if empty.
+func (c *Conversation) LastMessage() (Message, bool) {
+	if len(c.messages) == 0 {
+		return Message{}, false
+	}
+	return c.messages[len(c.messages)-1], true
 }
 
 // Clear removes all messages

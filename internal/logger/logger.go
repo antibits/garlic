@@ -64,42 +64,42 @@ func Close() error {
 
 // Debug logs a message at debug level
 func Debug(msg string, fields ...zap.Field) {
-	globalLogger.Debug(msg, fields...)
+	Get().Debug(msg, fields...)
 }
 
 // Info logs a message at info level
 func Info(msg string, fields ...zap.Field) {
-	globalLogger.Info(msg, fields...)
+	Get().Info(msg, fields...)
 }
 
 // Warn logs a message at warn level
 func Warn(msg string, fields ...zap.Field) {
-	globalLogger.Warn(msg, fields...)
+	Get().Warn(msg, fields...)
 }
 
 // Error logs a message at error level
 func Error(msg string, fields ...zap.Field) {
-	globalLogger.Error(msg, fields...)
+	Get().Error(msg, fields...)
 }
 
 // Fatal logs a message at fatal level and exits
 func Fatal(msg string, fields ...zap.Field) {
-	globalLogger.Fatal(msg, fields...)
+	Get().Fatal(msg, fields...)
 }
 
 // DPanic logs a message at DPanic level
 func DPanic(msg string, fields ...zap.Field) {
-	globalLogger.DPanic(msg, fields...)
+	Get().DPanic(msg, fields...)
 }
 
 // Panic logs a message at panic level
 func Panic(msg string, fields ...zap.Field) {
-	globalLogger.Panic(msg, fields...)
+	Get().Panic(msg, fields...)
 }
 
 // With creates a child logger with the given fields
 func With(fields ...zap.Field) *zap.Logger {
-	return globalLogger.With(fields...)
+	return Get().With(fields...)
 }
 
 // New creates a new logger with the given configuration

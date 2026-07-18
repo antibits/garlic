@@ -3,10 +3,118 @@ package tool
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+// realPython3 returns the absolute path to a working python3 interpreter,
+// skipping the test if none is available. Used to build venv fixtures whose
+// python is genuinely runnable.
+func realPython3(t *testing.T) string {
+	t.Helper()
+	path, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 not available")
+	}
+	return path
+}
+
+func TestResolveToolPythonPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	toolDir := filepath.Join(tmpDir, "mytool")
+	if err := os.MkdirAll(toolDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Without a venv, falls back to the configured pythonPath.
+	if got := resolveToolPythonPath("python3", toolDir); got != "python3" {
+		t.Errorf("expected fallback 'python3', got %q", got)
+	}
+
+	// With a venv, the venv interpreter is preferred (no activation needed).
+	venvBin := filepath.Join(toolDir, ".venv", "bin")
+	if err := os.MkdirAll(venvBin, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realPython3(t), filepath.Join(venvBin, "python")); err != nil {
+		t.Fatal(err)
+	}
+
+	want := filepath.Join(toolDir, ".venv", "bin", "python")
+	if got := resolveToolPythonPath("python3", toolDir); got != want {
+		t.Errorf("expected venv python %q, got %q", want, got)
+	}
+}
+
+func TestResolveToolPythonPathNonPythonFileFallsBack(t *testing.T) {
+	// Regression: a venv/bin/python that is an executable file but is NOT a
+	// Python interpreter (e.g. a broken/empty binary, or a stray script) must
+	// be rejected so the executor falls back to pythonPath. Otherwise the old
+	// stat-only check would select it and fail at fork/exec with
+	// "no such file or directory" / "exec format error".
+	tmpDir := t.TempDir()
+	toolDir := filepath.Join(tmpDir, "mytool")
+	venvBin := filepath.Join(toolDir, ".venv", "bin")
+	if err := os.MkdirAll(venvBin, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(venvBin, "python"), []byte("#!/not/python\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := resolveToolPythonPath("python3", toolDir); got != "python3" {
+		t.Errorf("expected fallback to 'python3' for non-Python venv, got %q", got)
+	}
+}
+
+func TestResolveToolPythonPathBrokenVenvFallsBack(t *testing.T) {
+	// A .venv whose python is a dangling symlink (e.g. venv built against a
+	// Python that has since been removed/upgraded) must fall back to the
+	// configured pythonPath instead of producing a fork/exec error.
+	tmpDir := t.TempDir()
+	toolDir := filepath.Join(tmpDir, "mytool")
+	venvBin := filepath.Join(toolDir, ".venv", "bin")
+	if err := os.MkdirAll(venvBin, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("python3.14", filepath.Join(venvBin, "python")); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := resolveToolPythonPath("python3", toolDir); got != "python3" {
+		t.Errorf("expected fallback 'python3' for broken venv, got %q", got)
+	}
+}
+
+func TestToolDiscoveryUsesVenv(t *testing.T) {
+	// A tool that ships its own .venv must be discovered using the venv
+	// interpreter (priority over the configured system pythonPath), so its
+	// dependencies resolve without needing `activate`.
+	tmpDir := t.TempDir()
+	toolsDir := filepath.Join(tmpDir, "tools")
+	toolDir := filepath.Join(toolsDir, "venvtool")
+	if err := os.MkdirAll(toolDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(toolDir, "main.py"), []byte("#!/usr/bin/env python3\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	venvBin := filepath.Join(toolDir, ".venv", "bin")
+	if err := os.MkdirAll(venvBin, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realPython3(t), filepath.Join(venvBin, "python")); err != nil {
+		t.Fatal(err)
+	}
+
+	discovery := NewToolDiscovery(toolsDir, "python3", nil)
+	if got := discovery.resolvePythonPath(toolDir); got != filepath.Join(toolDir, ".venv", "bin", "python") {
+		t.Fatalf("expected venv python path, got %q", got)
+	}
+}
 
 func TestToolDiscovery(t *testing.T) {
 	// Create a temporary tools directory

@@ -95,6 +95,7 @@ const ChatPage = ({ onOpenSettings }) => {
       case 'chunk':
         const chunkMessageType = data.data?.message_type || 'user'
         const chunkContent = data.data?.content || ''
+        const chunkToolName = data.data?.tool_name || ''
 
         if (chunkMessageType === 'hidden') {
           return
@@ -119,6 +120,16 @@ const ChatPage = ({ onOpenSettings }) => {
                 timestamp: new Date().toISOString(),
                 streaming: true,
                 message_type: 'auto'
+              }]
+            } else if (chunkMessageType === 'tool') {
+              state.messages = [...updatedMessages, {
+                id: `tool-${Date.now()}`,
+                role: 'tool',
+                content: chunkContent,
+                timestamp: new Date().toISOString(),
+                streaming: true,
+                message_type: 'tool',
+                toolName: chunkToolName
               }]
             } else {
               state.messages = [...updatedMessages, {
@@ -147,6 +158,16 @@ const ChatPage = ({ onOpenSettings }) => {
               streaming: true,
               message_type: 'auto'
             }]
+          } else if (chunkMessageType === 'tool') {
+            state.messages = [...messages, {
+              id: `tool-${Date.now()}`,
+              role: 'tool',
+              content: chunkContent,
+              timestamp: new Date().toISOString(),
+              streaming: true,
+              message_type: 'tool',
+              toolName: chunkToolName
+            }]
           } else {
             state.messages = [...messages, {
               id: `bot-${Date.now()}`,
@@ -165,24 +186,36 @@ const ChatPage = ({ onOpenSettings }) => {
         const finalMessageType = data.data?.message_type || 'user'
         const finalContent = data.data?.content || data.data
 
-        const lastBotMessage2 = state.messages.findLast(msg => msg.role === 'assistant' && msg.streaming)
+        const streamingMessages = state.messages.filter(msg => msg.streaming)
 
-        if (lastBotMessage2) {
+        if (streamingMessages.length > 0) {
+          // Finalize every streaming message. The backend may stop streaming
+          // more than one message (e.g. a tool bubble followed by the final
+          // answer), so a single findLast would leave the earlier ones stuck in
+          // the "waiting" animation. The last one adopts the final message type
+          // and any non-empty payload.
+          const lastStreamingId = streamingMessages[streamingMessages.length - 1].id
           state.messages = state.messages.map(msg =>
-            msg.id === lastBotMessage2.id
-              ? { ...msg, content: msg.content || finalContent, streaming: false, message_type: finalMessageType }
+            msg.streaming
+              ? {
+                  ...msg,
+                  content: msg.id === lastStreamingId ? (msg.content || finalContent) : msg.content,
+                  streaming: false,
+                  message_type: msg.id === lastStreamingId ? finalMessageType : msg.message_type
+                }
               : msg
           )
         } else {
           const existingMessage = state.messages.find(msg =>
-            msg.role === 'assistant' &&
+            (msg.role === 'assistant' || msg.role === 'tool') &&
             msg.content === finalContent &&
             !msg.streaming
           )
           if (!existingMessage) {
+            const isToolMessage = finalMessageType === 'tool'
             state.messages = [...state.messages, {
-              id: `bot-${Date.now()}`,
-              role: 'assistant',
+              id: isToolMessage ? `tool-${Date.now()}` : `bot-${Date.now()}`,
+              role: isToolMessage ? 'tool' : 'assistant',
               content: finalContent,
               timestamp: new Date().toISOString(),
               streaming: false,
@@ -199,11 +232,10 @@ const ChatPage = ({ onOpenSettings }) => {
         break
 
       case 'error':
-        const lastBotMessage3 = state.messages.findLast(msg => msg.role === 'assistant' && msg.streaming)
-        if (lastBotMessage3) {
+        if (state.messages.some(msg => msg.streaming)) {
           state.messages = state.messages.map(msg =>
-            msg.id === lastBotMessage3.id
-              ? { ...msg, streaming: false, content: t('chat.error', { error: data.data }) }
+            msg.streaming
+              ? { ...msg, streaming: false, content: msg.content || t('chat.error', { error: data.data }) }
               : msg
           )
         }
@@ -214,12 +246,9 @@ const ChatPage = ({ onOpenSettings }) => {
 
       case 'stopped':
         // Handle user-initiated stop
-        const lastBotMessage4 = state.messages.findLast(msg => msg.role === 'assistant' && msg.streaming)
-        if (lastBotMessage4) {
+        if (state.messages.some(msg => msg.streaming)) {
           state.messages = state.messages.map(msg =>
-            msg.id === lastBotMessage4.id
-              ? { ...msg, streaming: false }
-              : msg
+            msg.streaming ? { ...msg, streaming: false } : msg
           )
         }
         state.streamingMessageId = null

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -17,10 +18,51 @@ import (
 	"go.uber.org/zap"
 )
 
+// resolveToolPythonPath 选择 Python 解释器：
+// 优先使用工具自身目录下的虚拟环境（tools/<tool>/.venv），
+// 若不存在或不可用（如 venv 的 python 是失效的符号链接）则回退到传入的 pythonPath。
+func resolveToolPythonPath(pythonPath, toolDir string) string {
+	var candidate string
+	if runtime.GOOS == "windows" {
+		candidate = filepath.Join(toolDir, ".venv", "Scripts", "python.exe")
+	} else {
+		candidate = filepath.Join(toolDir, ".venv", "bin", "python")
+	}
+	if isExecutablePython(candidate) {
+		return candidate
+	}
+	return pythonPath
+}
+
+// isExecutablePython reports whether path points to a usable Python interpreter.
+// A mere stat/executable-bit check can pass while fork/exec still fails in the
+// real environment (e.g. a venv whose `python` symlink targets a Python version
+// that has since been removed, or a broken binary). To be safe we actually run
+// the candidate and require it to identify itself as Python.
+func isExecutablePython(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	if info.IsDir() {
+		return false
+	}
+	if info.Mode()&0111 == 0 {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, path, "--version").CombinedOutput()
+	if err != nil {
+		return false
+	}
+	return bytes.Contains(out, []byte("Python"))
+}
+
 // ParameterInfo describes a single parameter of a tool
 type ParameterInfo struct {
 	Name        string   `json:"name"`
-	Type        string   `json:"type"`        // "string", "integer", "boolean", "number"
+	Type        string   `json:"type"` // "string", "integer", "boolean", "number"
 	Description string   `json:"description"`
 	Required    bool     `json:"required"`
 	Default     any      `json:"default,omitempty"`
@@ -48,8 +90,8 @@ type toolCacheEntry struct {
 type ToolDiscovery struct {
 	toolsDir      string
 	pythonPath    string
-	disabledTools []string                 // 禁用的工具名称列表
-	builtinTools  map[string]ToolInfo      // 内置工具信息
+	disabledTools []string                  // 禁用的工具名称列表
+	builtinTools  map[string]ToolInfo       // 内置工具信息
 	cache         map[string]toolCacheEntry // 每个工具的独立缓存
 	mu            sync.RWMutex
 }
@@ -247,13 +289,19 @@ func (d *ToolDiscovery) getToolParameters(ctx context.Context, toolPath string) 
 	return params, nil
 }
 
+// resolvePythonPath 优先使用工具自身目录下的虚拟环境（tools/<tool>/.venv），
+// 若不存在则回退到配置中的 pythonPath。
+func (d *ToolDiscovery) resolvePythonPath(toolDir string) string {
+	return resolveToolPythonPath(d.pythonPath, toolDir)
+}
+
 // runToolMeta runs a meta-command (-desc or -args) on the tool script.
 func (d *ToolDiscovery) runToolMeta(ctx context.Context, toolPath string, flag string) (string, error) {
 	var stdout, stderr bytes.Buffer
 
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, d.pythonPath, "main.py", flag)
+	cmd := exec.CommandContext(ctx, d.resolvePythonPath(toolPath), "main.py", flag)
 	cmd.Dir = toolPath
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -274,7 +322,7 @@ func (d *ToolDiscovery) getToolDescriptionFromHelp(ctx context.Context, toolPath
 
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, d.pythonPath, "main.py", "-h")
+	cmd := exec.CommandContext(ctx, d.resolvePythonPath(toolPath), "main.py", "-h")
 	cmd.Dir = toolPath
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

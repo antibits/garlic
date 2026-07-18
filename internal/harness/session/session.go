@@ -34,8 +34,7 @@ type SessionMeta struct {
 // SessionInput represents a user input request for a session
 type SessionInput struct {
 	Request   string
-	Result    chan<- string
-	Error     chan<- error
+	Done      chan struct{} // closed by the worker when processing completes
 	StreamCtx *StreamContext
 	Cancel    context.CancelFunc // 用于取消当前请求的上下文
 }
@@ -44,6 +43,8 @@ type SessionInput struct {
 type StreamChunk struct {
 	Content     string
 	MessageType string // "user" or "auto"
+	IsError     bool   // marks a terminal error chunk
+	ToolName    string // tool name for MessageTypeTool chunks
 }
 
 // StreamContext carries streaming callback through the workflow

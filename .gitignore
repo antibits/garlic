@@ -20,6 +20,7 @@ web/dist/
 web/dist/**/*
 main.exe
 tools/webrowser/chrome*/**/*
+tools/webrowser/.venv/
 config.yaml
 **/node_modules
 **/node_modules/**/*

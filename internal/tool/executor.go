@@ -150,9 +150,19 @@ func (e *Executor) ExecuteWithStream(ctx context.Context, toolName string, args 
 
 // executePythonTool executes a Python script from tools/<toolname>/main.py
 // Arguments are passed as command-line options: -key value
+// resolvePythonPath 选择 Python 解释器：
+// 优先使用工具自身目录下的虚拟环境（tools/<tool>/.venv），
+// 若不存在则回退到配置中的 python_path。
+func (e *Executor) resolvePythonPath(toolDir string) string {
+	return resolveToolPythonPath(e.pythonPath, toolDir)
+}
+
 func (e *Executor) executePythonTool(ctx context.Context, toolName string, args map[string]interface{}, callback StreamCallback) (*ToolResult, error) {
 	// Tool directory: tools/<toolname>
 	toolDir := filepath.Join(e.toolsDir, toolName)
+
+	// 优先使用工具自带的 venv，否则回退到配置的 python_path
+	pythonPath := e.resolvePythonPath(toolDir)
 
 	// Build command-line arguments: python main.py -key1 value1 -key2 value2 ...
 	cmdArgs := []string{"-u", "main.py"}
@@ -188,7 +198,7 @@ func (e *Executor) executePythonTool(ctx context.Context, toolName string, args 
 		defer raceLock.Unlock()
 	}
 
-	cmd := exec.CommandContext(ctx, e.pythonPath, cmdArgs...)
+	cmd := exec.CommandContext(ctx, pythonPath, cmdArgs...)
 	cmd.Dir = toolDir // Set working directory to tool directory
 
 	// 创建管道：stdout用于流式推送，stderr仅缓冲记录
